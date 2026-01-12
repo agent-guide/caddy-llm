@@ -1,0 +1,63 @@
+# Caddy LLM Router - Basic Configuration
+# This configuration proxies Anthropic API requests to OpenAI
+
+{
+	# Global options
+	admin localhost:2019
+}
+
+localhost:8082 {
+	# Enable access log
+	log {
+		output file /var/log/caddy/llm-access.log
+		format json
+	}
+
+	route /v1/* {
+		llm_router {
+			# Provider: openai, gemini, anthropic, groq, ollama, mistral, openrouter
+			provider openai
+
+			# API key (can use environment variables with {$ENV_VAR})
+			api_key {$OPENAI_API_KEY}
+
+			# Model mapping - map Claude models to provider models
+			map haiku gpt-4o-mini
+			map sonnet gpt-4o
+
+			# Retry configuration
+			max_retries 3
+			retry_delay 2
+
+			# Logging
+			log_level info
+			log_requests
+		}
+	}
+}
+
+# Example with multiple providers and fallback
+# :8083 {
+# 	route /v1/* {
+# 		llm_router {
+# 			provider openrouter
+#
+# 			# Primary API key
+# 			api_key {$OPENROUTER_API_KEY}
+#
+# 			# Fallback providers
+# 			fallback openai gemini
+#
+# 			# Additional API keys for fallback
+# 			api_key openai {$OPENAI_API_KEY}
+# 			api_key gemini {$GEMINI_API_KEY}
+#
+# 			# Model mapping
+# 			map haiku gpt-4o-mini
+# 			map sonnet gpt-4o
+#
+# 			max_retries 5
+# 			retry_delay 1
+# 		}
+# 	}
+# }

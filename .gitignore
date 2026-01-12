@@ -26,6 +26,34 @@ go.work.sum
 
 # env file
 .env
+.env.local
+
+# Build output
+caddy-llm-router
+caddy
+dist/
+
+# Logs
+*.log
+logs/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Test coverage
+coverage.txt
+coverage.html
+
+# Vendor
+vendor/
 
 # Editor/IDE
 # .idea/
