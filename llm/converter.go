@@ -7,7 +7,7 @@ import (
 	"io"
 	"strings"
 
-	"github.com/agent-guide/caddy-llm-router/llm/models"
+	"github.com/agent-guide/caddy-llm/llm/models"
 )
 
 // Converter handles format conversion between Anthropic and gollm formats
@@ -51,10 +51,10 @@ func (c *Converter) AnthropicToGollm(ctx context.Context, req *models.MessagesRe
 func (c *Converter) GollmToAnthropic(response string, originalReq *models.MessagesRequest) (*models.MessagesResponse, error) {
 	// Create Anthropic-style response
 	resp := &models.MessagesResponse{
-		ID:     generateMessageID(),
-		Type:   "message",
-		Role:   "assistant",
-		Model:  originalReq.Model,
+		ID:    generateMessageID(),
+		Type:  "message",
+		Role:  "assistant",
+		Model: originalReq.Model,
 		Content: []models.ContentBlockResponse{
 			{
 				Type: "text",
@@ -141,7 +141,7 @@ func (c *Converter) ProcessStreamChunk(chunk string) ([]string, error) {
 	// and convert it to proper Anthropic SSE events
 
 	deltaEvent := map[string]interface{}{
-		"type": "content_block_delta",
+		"type":  "content_block_delta",
 		"index": 0,
 		"delta": map[string]string{
 			"type": "text_delta",

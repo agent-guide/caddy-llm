@@ -10,8 +10,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/agent-guide/caddy-llm-router/llm"
-	"github.com/agent-guide/caddy-llm-router/llm/models"
+	"github.com/agent-guide/caddy-llm/llm"
+	"github.com/agent-guide/caddy-llm/llm/models"
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"

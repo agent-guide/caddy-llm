@@ -1,4 +1,4 @@
-module github.com/agent-guide/caddy-llm-router
+module github.com/agent-guide/caddy-llm
 
 go 1.25.5
 

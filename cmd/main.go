@@ -7,7 +7,7 @@ import (
 	_ "github.com/caddyserver/caddy/v2/modules/standard"
 
 	// Our custom module - need to import the actual package with init()
-	_ "github.com/agent-guide/caddy-llm-router"
+	_ "github.com/agent-guide/caddy-llm"
 )
 
 func main() {

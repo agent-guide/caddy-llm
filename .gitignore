@@ -29,7 +29,7 @@ go.work.sum
 .env.local
 
 # Build output
-caddy-llm-router
+caddy-llm
 caddy
 dist/
 
