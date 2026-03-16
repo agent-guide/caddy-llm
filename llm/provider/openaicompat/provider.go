@@ -271,6 +271,18 @@ func (b *Base) Embed(ctx context.Context, req *provider.EmbedRequest) (*provider
 
 func (b *Base) setHeaders(req *http.Request) {
 	req.Header.Set("Content-Type", "application/json")
+
+	// Per-request credential override: use OAuth access_token from CLI login.
+	if cred, ok := provider.CredentialFromContext(req.Context()); ok {
+		if token, _ := cred.Metadata["access_token"].(string); token != "" {
+			req.Header.Set("Authorization", "Bearer "+token)
+			for k, v := range b.config.Network.ExtraHeaders {
+				req.Header.Set(k, v)
+			}
+			return
+		}
+	}
+
 	if b.config.APIKey != "" {
 		req.Header.Set("Authorization", "Bearer "+b.config.APIKey)
 	}

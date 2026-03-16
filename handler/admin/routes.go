@@ -44,6 +44,9 @@ func (h *Handler) Routes() []Route {
 
 		// Metrics
 		{Method: http.MethodGet, Path: "/admin/metrics", Handler: h.handleMetrics},
+
+		// CLI Login
+		{Method: http.MethodPost, Path: "/admin/clilogin/codex", Handler: h.handleCodexLogin},
 	}
 }
 

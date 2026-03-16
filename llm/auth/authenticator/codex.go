@@ -20,7 +20,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/agent-guide/caddy-llm/llm/auth/manager"
+	"github.com/agent-guide/caddy-llm/llm/auth/credential"
 	"github.com/google/uuid"
 )
 
@@ -117,7 +117,7 @@ func (a *CodexAuthenticator) Provider() string {
 
 // Login initiates the Codex CLI login flow and returns a new Credential on success.
 // It uses browser-based OAuth PKCE by default; set UseDeviceFlow for headless environments.
-func (a *CodexAuthenticator) Login(ctx context.Context) (*manager.Credential, error) {
+func (a *CodexAuthenticator) Login(ctx context.Context) (*credential.Credential, error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -129,7 +129,7 @@ func (a *CodexAuthenticator) Login(ctx context.Context) (*manager.Credential, er
 
 // RefreshLead refreshes the credential's access token before it expires.
 // Returns nil if no refresh token is present or the credential has no expiry metadata.
-func (a *CodexAuthenticator) RefreshLead(ctx context.Context, cred *manager.Credential) (*manager.Credential, error) {
+func (a *CodexAuthenticator) RefreshLead(ctx context.Context, cred *credential.Credential) (*credential.Credential, error) {
 	if cred == nil {
 		return nil, fmt.Errorf("codex: credential is nil")
 	}
@@ -154,7 +154,7 @@ func (a *CodexAuthenticator) RefreshLead(ctx context.Context, cred *manager.Cred
 
 // ---- Browser-based OAuth PKCE flow ----
 
-func (a *CodexAuthenticator) loginWithBrowser(ctx context.Context) (*manager.Credential, error) {
+func (a *CodexAuthenticator) loginWithBrowser(ctx context.Context) (*credential.Credential, error) {
 	codeVerifier, codeChallenge, err := generatePKCECodes()
 	if err != nil {
 		return nil, fmt.Errorf("codex: PKCE generation failed: %w", err)
@@ -211,7 +211,7 @@ func (a *CodexAuthenticator) loginWithBrowser(ctx context.Context) (*manager.Cre
 
 // ---- Device flow ----
 
-func (a *CodexAuthenticator) loginWithDeviceFlow(ctx context.Context) (*manager.Credential, error) {
+func (a *CodexAuthenticator) loginWithDeviceFlow(ctx context.Context) (*credential.Credential, error) {
 	client := a.httpClient()
 
 	userCodeResp, err := requestDeviceUserCode(ctx, client)
@@ -359,11 +359,11 @@ func (a *CodexAuthenticator) refreshTokensWithRetry(ctx context.Context, refresh
 
 // ---- Credential builder ----
 
-func (a *CodexAuthenticator) buildCredential(tokenResp *codexTokenResponse) (*manager.Credential, error) {
-	cred := &manager.Credential{
+func (a *CodexAuthenticator) buildCredential(tokenResp *codexTokenResponse) (*credential.Credential, error) {
+	cred := &credential.Credential{
 		ID:       uuid.New().String(),
 		Provider: a.Provider(),
-		Status:   manager.StatusActive,
+		Status:   credential.StatusActive,
 		Metadata: make(map[string]any),
 		Attributes: make(map[string]string),
 	}
@@ -391,7 +391,7 @@ func (a *CodexAuthenticator) buildCredential(tokenResp *codexTokenResponse) (*ma
 }
 
 // applyTokenToMetadata writes token fields into cred.Metadata.
-func (a *CodexAuthenticator) applyTokenToMetadata(cred *manager.Credential, tokenResp *codexTokenResponse) {
+func (a *CodexAuthenticator) applyTokenToMetadata(cred *credential.Credential, tokenResp *codexTokenResponse) {
 	if cred.Metadata == nil {
 		cred.Metadata = make(map[string]any)
 	}

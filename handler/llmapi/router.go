@@ -3,6 +3,10 @@ package llmapi
 import (
 	"net/http"
 	"strings"
+
+	"github.com/agent-guide/caddy-llm/handler/llmapi/openai"
+	"github.com/agent-guide/caddy-llm/llm/auth/manager"
+	"github.com/agent-guide/caddy-llm/llm/provider"
 )
 
 // Router routes incoming requests to the correct API format handler
@@ -13,9 +17,11 @@ type Router struct {
 	gemini    http.Handler
 }
 
-// NewRouter creates a new LLM API router.
-func NewRouter() *Router {
-	return &Router{}
+// NewRouter creates a new LLM API router wired with the auth manager and provider.
+func NewRouter(authMgr *manager.Manager, prov provider.Provider) *Router {
+	return &Router{
+		openai: openai.NewHandler(authMgr, prov),
+	}
 }
 
 // ServeHTTP routes the request based on the path.

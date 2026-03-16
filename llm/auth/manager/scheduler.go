@@ -6,6 +6,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/agent-guide/caddy-llm/llm/auth/credential"
 )
 
 // schedulerStrategy identifies the built-in routing semantics.
@@ -43,7 +45,7 @@ type providerScheduler struct {
 }
 
 type scheduledCredMeta struct {
-	cred     *Credential
+	cred     *credential.Credential
 	priority int
 }
 
@@ -57,7 +59,7 @@ type modelScheduler struct {
 
 type scheduledCred struct {
 	meta        *scheduledCredMeta
-	cred        *Credential
+	cred        *credential.Credential
 	state       scheduledState
 	nextRetryAt time.Time
 }
@@ -100,7 +102,7 @@ func (s *authScheduler) setSelector(selector Selector) {
 }
 
 // rebuild recreates the complete scheduler state from a credential snapshot.
-func (s *authScheduler) rebuild(creds []*Credential) {
+func (s *authScheduler) rebuild(creds []*credential.Credential) {
 	if s == nil {
 		return
 	}
@@ -116,7 +118,7 @@ func (s *authScheduler) rebuild(creds []*Credential) {
 }
 
 // upsert incrementally synchronizes one credential into the scheduler.
-func (s *authScheduler) upsert(cred *Credential) {
+func (s *authScheduler) upsert(cred *credential.Credential) {
 	if s == nil {
 		return
 	}
@@ -140,9 +142,9 @@ func (s *authScheduler) remove(credID string) {
 }
 
 // pick returns the next credential for a provider/model request.
-func (s *authScheduler) pick(_ context.Context, provider, model string, tried map[string]struct{}) (*Credential, error) {
+func (s *authScheduler) pick(_ context.Context, provider, model string, tried map[string]struct{}) (*credential.Credential, error) {
 	if s == nil {
-		return nil, &Error{Code: "credential_not_found", Message: "no credential available"}
+		return nil, &credential.Error{Code: "credential_not_found", Message: "no credential available"}
 	}
 	providerKey := strings.ToLower(strings.TrimSpace(provider))
 	modelKey := canonicalModelKey(model)
@@ -152,12 +154,12 @@ func (s *authScheduler) pick(_ context.Context, provider, model string, tried ma
 
 	ps := s.providers[providerKey]
 	if ps == nil {
-		return nil, &Error{Code: "credential_not_found", Message: "no credential available"}
+		return nil, &credential.Error{Code: "credential_not_found", Message: "no credential available"}
 	}
 
 	shard := ps.ensureModelLocked(modelKey, time.Now())
 	if shard == nil {
-		return nil, &Error{Code: "credential_not_found", Message: "no credential available"}
+		return nil, &credential.Error{Code: "credential_not_found", Message: "no credential available"}
 	}
 
 	predicate := func(entry *scheduledCred) bool {
@@ -178,7 +180,7 @@ func (s *authScheduler) pick(_ context.Context, provider, model string, tried ma
 	return nil, shard.unavailableErrorLocked(provider, model, predicate)
 }
 
-func (s *authScheduler) upsertLocked(cred *Credential, now time.Time) {
+func (s *authScheduler) upsertLocked(cred *credential.Credential, now time.Time) {
 	if cred == nil {
 		return
 	}
@@ -356,7 +358,7 @@ func (m *modelScheduler) promoteExpiredLocked(now time.Time) {
 	}
 }
 
-func (m *modelScheduler) pickReadyLocked(strategy schedulerStrategy, predicate func(*scheduledCred) bool) *Credential {
+func (m *modelScheduler) pickReadyLocked(strategy schedulerStrategy, predicate func(*scheduledCred) bool) *credential.Credential {
 	if m == nil {
 		return nil
 	}
@@ -437,7 +439,7 @@ func (m *modelScheduler) unavailableErrorLocked(provider, model string, predicat
 		}
 	}
 	if total == 0 {
-		return &Error{Code: "credential_not_found", Message: "no credential available"}
+		return &credential.Error{Code: "credential_not_found", Message: "no credential available"}
 	}
 	if cooldownCount == total && !earliest.IsZero() {
 		resetIn := earliest.Sub(now)
@@ -446,7 +448,7 @@ func (m *modelScheduler) unavailableErrorLocked(provider, model string, predicat
 		}
 		return &cooldownError{model: model, provider: provider, resetIn: formatDuration(resetIn)}
 	}
-	return &Error{Code: "credential_unavailable", Message: "no credential available"}
+	return &credential.Error{Code: "credential_unavailable", Message: "no credential available"}
 }
 
 func (m *modelScheduler) rebuildIndexesLocked() {

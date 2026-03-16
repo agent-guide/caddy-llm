@@ -1,4 +1,4 @@
-package manager
+package credential
 
 import (
 	"crypto/sha256"

@@ -12,7 +12,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/agent-guide/caddy-llm/llm/auth/manager"
+	"github.com/agent-guide/caddy-llm/llm/auth/credential"
 	"github.com/google/uuid"
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
@@ -64,7 +64,7 @@ func (a *GeminiAuthenticator) Provider() string {
 }
 
 // Login initiates the Gemini CLI login flow and returns a new Credential on success.
-func (a *GeminiAuthenticator) Login(ctx context.Context) (*manager.Credential, error) {
+func (a *GeminiAuthenticator) Login(ctx context.Context) (*credential.Credential, error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -73,7 +73,7 @@ func (a *GeminiAuthenticator) Login(ctx context.Context) (*manager.Credential, e
 
 // RefreshLead refreshes the credential's access token before it expires.
 // Returns nil if no refresh token is present.
-func (a *GeminiAuthenticator) RefreshLead(ctx context.Context, cred *manager.Credential) (*manager.Credential, error) {
+func (a *GeminiAuthenticator) RefreshLead(ctx context.Context, cred *credential.Credential) (*credential.Credential, error) {
 	if cred == nil {
 		return nil, fmt.Errorf("gemini: credential is nil")
 	}
@@ -98,7 +98,7 @@ func (a *GeminiAuthenticator) RefreshLead(ctx context.Context, cred *manager.Cre
 
 // ---- Browser-based OAuth2 flow ----
 
-func (a *GeminiAuthenticator) loginWithBrowser(ctx context.Context) (*manager.Credential, error) {
+func (a *GeminiAuthenticator) loginWithBrowser(ctx context.Context) (*credential.Credential, error) {
 	port := a.CallbackPort
 	if port <= 0 {
 		port = geminiDefaultCallbackPort
@@ -198,11 +198,11 @@ func (a *GeminiAuthenticator) refreshTokensWithRetry(ctx context.Context, refres
 
 // ---- Credential builder ----
 
-func (a *GeminiAuthenticator) buildCredential(ctx context.Context, conf *oauth2.Config, token *oauth2.Token) (*manager.Credential, error) {
-	cred := &manager.Credential{
+func (a *GeminiAuthenticator) buildCredential(ctx context.Context, conf *oauth2.Config, token *oauth2.Token) (*credential.Credential, error) {
+	cred := &credential.Credential{
 		ID:         uuid.New().String(),
 		Provider:   a.Provider(),
-		Status:     manager.StatusActive,
+		Status:     credential.StatusActive,
 		Metadata:   make(map[string]any),
 		Attributes: make(map[string]string),
 	}
@@ -223,7 +223,7 @@ func (a *GeminiAuthenticator) buildCredential(ctx context.Context, conf *oauth2.
 }
 
 // applyGeminiTokenToMetadata writes OAuth2 token fields into cred.Metadata.
-func applyGeminiTokenToMetadata(cred *manager.Credential, token *oauth2.Token) {
+func applyGeminiTokenToMetadata(cred *credential.Credential, token *oauth2.Token) {
 	if cred.Metadata == nil {
 		cred.Metadata = make(map[string]any)
 	}

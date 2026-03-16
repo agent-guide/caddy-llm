@@ -1,4 +1,4 @@
-package manager
+package credential
 
 // Status represents the lifecycle state of a Credential entry.
 type Status string

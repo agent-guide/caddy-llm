@@ -8,6 +8,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/agent-guide/caddy-llm/llm/auth/credential"
+	"github.com/agent-guide/caddy-llm/llm/store/intf"
 	"github.com/google/uuid"
 )
 
@@ -31,15 +33,15 @@ type Result struct {
 	// RetryAfter carries a provider-supplied retry hint (e.g. 429 Retry-After).
 	RetryAfter *time.Duration
 	// Error describes the failure when Success is false.
-	Error *Error
+	Error *credential.Error
 }
 
 // Hook captures lifecycle callbacks for observing credential changes.
 type Hook interface {
 	// OnCredentialRegistered fires when a new credential is registered.
-	OnCredentialRegistered(ctx context.Context, cred *Credential)
+	OnCredentialRegistered(ctx context.Context, cred *credential.Credential)
 	// OnCredentialUpdated fires when an existing credential changes state.
-	OnCredentialUpdated(ctx context.Context, cred *Credential)
+	OnCredentialUpdated(ctx context.Context, cred *credential.Credential)
 	// OnResult fires when an execution result is recorded.
 	OnResult(ctx context.Context, result Result)
 }
@@ -47,16 +49,16 @@ type Hook interface {
 // NoopHook provides empty hook implementations.
 type NoopHook struct{}
 
-func (NoopHook) OnCredentialRegistered(context.Context, *Credential) {}
-func (NoopHook) OnCredentialUpdated(context.Context, *Credential)    {}
-func (NoopHook) OnResult(context.Context, Result)                    {}
+func (NoopHook) OnCredentialRegistered(context.Context, *credential.Credential) {}
+func (NoopHook) OnCredentialUpdated(context.Context, *credential.Credential)    {}
+func (NoopHook) OnResult(context.Context, Result)                               {}
 
 // Refresher is an optional interface that provider-specific credential managers
 // can implement to refresh expiring credentials.
 type Refresher interface {
 	// Refresh attempts to refresh the credential and returns the updated state.
 	// Returning nil means the credential should be left unchanged.
-	Refresh(ctx context.Context, cred *Credential) (*Credential, error)
+	Refresh(ctx context.Context, cred *credential.Credential) (*credential.Credential, error)
 }
 
 // authenticatorRefresher wraps an Authenticator to satisfy the Refresher interface,
@@ -65,21 +67,21 @@ type authenticatorRefresher struct {
 	auth Authenticator
 }
 
-func (a *authenticatorRefresher) Refresh(ctx context.Context, cred *Credential) (*Credential, error) {
+func (a *authenticatorRefresher) Refresh(ctx context.Context, cred *credential.Credential) (*credential.Credential, error) {
 	return a.auth.RefreshLead(ctx, cred)
 }
 
 // Manager orchestrates credential lifecycle: registration, selection, result
 // feedback, quota tracking, and optional persistence.
 type Manager struct {
-	store    Store
+	store    intf.CredentialStorer
 	selector Selector
 	hook     Hook
 
 	mu              sync.RWMutex
-	creds           map[string]*Credential // credID -> Credential
-	authenticators  map[string]Authenticator // providerKey -> Authenticator
-	refresher       Refresher                // fallback global refresher
+	creds           map[string]*credential.Credential // credID -> Credential
+	authenticators  map[string]Authenticator          // providerKey -> Authenticator
+	refresher       Refresher                         // fallback global refresher
 	scheduler       *authScheduler
 	providerOffsets map[string]int
 
@@ -96,7 +98,7 @@ type Manager struct {
 
 // NewManager constructs a Manager with optional custom selector and hook.
 // If selector is nil, RoundRobinSelector is used. If hook is nil, NoopHook is used.
-func NewManager(store Store, selector Selector, hook Hook) *Manager {
+func NewManager(store intf.CredentialStorer, selector Selector, hook Hook) *Manager {
 	if selector == nil {
 		selector = &RoundRobinSelector{}
 	}
@@ -107,7 +109,7 @@ func NewManager(store Store, selector Selector, hook Hook) *Manager {
 		store:            store,
 		selector:         selector,
 		hook:             hook,
-		creds:            make(map[string]*Credential),
+		creds:            make(map[string]*credential.Credential),
 		authenticators:   make(map[string]Authenticator),
 		providerOffsets:  make(map[string]int),
 		refreshSemaphore: make(chan struct{}, defaultRefreshMaxConcurrent),
@@ -141,7 +143,7 @@ func (m *Manager) GetAuthenticator(provider string) (Authenticator, bool) {
 }
 
 // SetStore swaps the underlying persistence store.
-func (m *Manager) SetStore(store Store) {
+func (m *Manager) SetStore(store intf.CredentialStorer) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.store = store
@@ -203,7 +205,7 @@ func (m *Manager) Load(ctx context.Context) error {
 // Register adds a new credential to the manager and optionally persists it.
 // If the credential has no ID, one is generated. If a credential with the same
 // ID already exists, it is replaced.
-func (m *Manager) Register(ctx context.Context, cred *Credential) error {
+func (m *Manager) Register(ctx context.Context, cred *credential.Credential) error {
 	if cred == nil {
 		return fmt.Errorf("manager: credential is nil")
 	}
@@ -221,7 +223,7 @@ func (m *Manager) Register(ctx context.Context, cred *Credential) error {
 	}
 	cred.UpdatedAt = now
 	if cred.Status == "" {
-		cred.Status = StatusActive
+		cred.Status = credential.StatusActive
 	}
 	cred.EnsureIndex()
 
@@ -241,7 +243,7 @@ func (m *Manager) Register(ctx context.Context, cred *Credential) error {
 }
 
 // Update merges new state into an existing credential and optionally persists.
-func (m *Manager) Update(ctx context.Context, cred *Credential) error {
+func (m *Manager) Update(ctx context.Context, cred *credential.Credential) error {
 	if cred == nil {
 		return fmt.Errorf("manager: credential is nil")
 	}
@@ -291,7 +293,7 @@ func (m *Manager) Deregister(ctx context.Context, id string) error {
 }
 
 // Get returns the credential with the given ID, or nil if not found.
-func (m *Manager) Get(id string) *Credential {
+func (m *Manager) Get(id string) *credential.Credential {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	if cred, ok := m.creds[id]; ok {
@@ -302,11 +304,11 @@ func (m *Manager) Get(id string) *Credential {
 
 // List returns all credentials, optionally filtered by provider.
 // Pass an empty string to list all.
-func (m *Manager) List(provider string) []*Credential {
+func (m *Manager) List(provider string) []*credential.Credential {
 	provider = strings.ToLower(strings.TrimSpace(provider))
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	out := make([]*Credential, 0, len(m.creds))
+	out := make([]*credential.Credential, 0, len(m.creds))
 	for _, cred := range m.creds {
 		if provider != "" && strings.ToLower(cred.Provider) != provider {
 			continue
@@ -319,9 +321,9 @@ func (m *Manager) List(provider string) []*Credential {
 // Pick selects the best available credential for the given provider and model.
 // Tried is an optional set of credential IDs that have already been attempted
 // and should be skipped.
-func (m *Manager) Pick(ctx context.Context, provider, model string, tried map[string]struct{}) (*Credential, error) {
+func (m *Manager) Pick(ctx context.Context, provider, model string, tried map[string]struct{}) (*credential.Credential, error) {
 	if m == nil {
-		return nil, &Error{Code: "manager_nil", Message: "manager not initialized"}
+		return nil, &credential.Error{Code: "manager_nil", Message: "manager not initialized"}
 	}
 
 	// Try scheduler first (O(1) incremental state).
@@ -337,7 +339,7 @@ func (m *Manager) Pick(ctx context.Context, provider, model string, tried map[st
 
 	m.mu.RLock()
 	providerKey := strings.ToLower(strings.TrimSpace(provider))
-	var candidates []*Credential
+	var candidates []*credential.Credential
 	for _, c := range m.creds {
 		if strings.ToLower(c.Provider) == providerKey {
 			if len(tried) > 0 {
@@ -393,8 +395,8 @@ func (m *Manager) MarkResult(ctx context.Context, result Result) {
 			cred.Unavailable = false
 			cred.LastError = nil
 			cred.NextRetryAfter = time.Time{}
-			cred.Quota = QuotaState{}
-			cred.Status = StatusActive
+			cred.Quota = credential.QuotaState{}
+			cred.Status = credential.StatusActive
 			cred.StatusMessage = ""
 			changed = true
 		}
@@ -404,8 +406,8 @@ func (m *Manager) MarkResult(ctx context.Context, result Result) {
 					state.Unavailable = false
 					state.LastError = nil
 					state.NextRetryAfter = time.Time{}
-					state.Quota = QuotaState{}
-					state.Status = StatusActive
+					state.Quota = credential.QuotaState{}
+					state.Status = credential.StatusActive
 					state.StatusMessage = ""
 					state.UpdatedAt = now
 					changed = true
@@ -424,7 +426,7 @@ func (m *Manager) MarkResult(ctx context.Context, result Result) {
 			if result.RetryAfter != nil && *result.RetryAfter > backoff {
 				backoff = *result.RetryAfter
 			}
-			cred.Quota = QuotaState{
+			cred.Quota = credential.QuotaState{
 				Exceeded:      true,
 				Reason:        rerr.Message,
 				NextRecoverAt: now.Add(backoff),
@@ -432,11 +434,11 @@ func (m *Manager) MarkResult(ctx context.Context, result Result) {
 			}
 			cred.Unavailable = true
 			cred.NextRetryAfter = now.Add(backoff)
-			cred.Status = StatusError
+			cred.Status = credential.StatusError
 			cred.StatusMessage = "quota exceeded"
 		} else if rerr.HTTPStatus == 401 || rerr.HTTPStatus == 403 {
 			// Auth errors disable the credential.
-			cred.Status = StatusDisabled
+			cred.Status = credential.StatusDisabled
 			cred.StatusMessage = rerr.Message
 			cred.Disabled = true
 		} else {
@@ -445,18 +447,18 @@ func (m *Manager) MarkResult(ctx context.Context, result Result) {
 				cred.NextRetryAfter = now.Add(*result.RetryAfter)
 				cred.Unavailable = true
 			}
-			cred.Status = StatusError
+			cred.Status = credential.StatusError
 			cred.StatusMessage = rerr.Message
 		}
 
 		// Apply model-level state if model is specified.
 		if result.Model != "" {
 			if cred.ModelStates == nil {
-				cred.ModelStates = make(map[string]*ModelState)
+				cred.ModelStates = make(map[string]*credential.ModelState)
 			}
 			state := cred.ModelStates[result.Model]
 			if state == nil {
-				state = &ModelState{}
+				state = &credential.ModelState{}
 				cred.ModelStates[result.Model] = state
 			}
 			state.UpdatedAt = now
@@ -464,11 +466,11 @@ func (m *Manager) MarkResult(ctx context.Context, result Result) {
 				state.Quota = cred.Quota
 				state.Unavailable = true
 				state.NextRetryAfter = cred.NextRetryAfter
-				state.Status = StatusError
+				state.Status = credential.StatusError
 				state.StatusMessage = "quota exceeded"
 			} else {
 				state.LastError = rerr
-				state.Status = StatusError
+				state.Status = credential.StatusError
 				state.StatusMessage = rerr.Message
 				if result.RetryAfter != nil {
 					state.Unavailable = true
@@ -486,7 +488,7 @@ func (m *Manager) MarkResult(ctx context.Context, result Result) {
 	m.hook.OnResult(ctx, result)
 }
 
-func (m *Manager) quotaCooldownDisabledForCred(cred *Credential) bool {
+func (m *Manager) quotaCooldownDisabledForCred(cred *credential.Credential) bool {
 	if cred != nil {
 		if override, ok := cred.DisableCoolingOverride(); ok {
 			return override
@@ -551,7 +553,7 @@ func (m *Manager) runRefreshCycle(ctx context.Context) {
 			// Semaphore full; skip this cycle.
 			return
 		}
-		go func(c *Credential, r Refresher) {
+		go func(c *credential.Credential, r Refresher) {
 			defer func() { <-m.refreshSemaphore }()
 			m.refreshOne(ctx, c, r, now)
 		}(cred, refresher)
@@ -572,12 +574,12 @@ func (m *Manager) resolveRefresher(provider string) Refresher {
 	return fallback
 }
 
-func (m *Manager) snapshotForRefresh(now time.Time) []*Credential {
+func (m *Manager) snapshotForRefresh(now time.Time) []*credential.Credential {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	var candidates []*Credential
+	var candidates []*credential.Credential
 	for _, cred := range m.creds {
-		if cred.Disabled || cred.Status == StatusDisabled {
+		if cred.Disabled || cred.Status == credential.StatusDisabled {
 			continue
 		}
 		if !needsRefresh(cred, now) {
@@ -588,8 +590,8 @@ func (m *Manager) snapshotForRefresh(now time.Time) []*Credential {
 	return candidates
 }
 
-func needsRefresh(cred *Credential, now time.Time) bool {
-	if cred.Status == StatusRefreshing {
+func needsRefresh(cred *credential.Credential, now time.Time) bool {
+	if cred.Status == credential.StatusRefreshing {
 		return false
 	}
 	if !cred.NextRefreshAfter.IsZero() && now.Before(cred.NextRefreshAfter) {
@@ -602,10 +604,10 @@ func needsRefresh(cred *Credential, now time.Time) bool {
 	return false
 }
 
-func (m *Manager) refreshOne(ctx context.Context, cred *Credential, refresher Refresher, now time.Time) {
+func (m *Manager) refreshOne(ctx context.Context, cred *credential.Credential, refresher Refresher, now time.Time) {
 	// Mark as refreshing.
 	refreshing := cred.Clone()
-	refreshing.Status = StatusRefreshing
+	refreshing.Status = credential.StatusRefreshing
 	refreshing.UpdatedAt = now
 	_ = m.Update(ctx, refreshing)
 
@@ -613,7 +615,7 @@ func (m *Manager) refreshOne(ctx context.Context, cred *Credential, refresher Re
 	if err != nil {
 		// Refresh failed: mark error and schedule retry.
 		failed := cred.Clone()
-		failed.Status = StatusError
+		failed.Status = credential.StatusError
 		failed.StatusMessage = err.Error()
 		failed.NextRefreshAfter = time.Now().Add(5 * time.Minute)
 		_ = m.Update(ctx, failed)
@@ -622,23 +624,23 @@ func (m *Manager) refreshOne(ctx context.Context, cred *Credential, refresher Re
 	if updated == nil {
 		// Refresher returned nil: leave credential unchanged.
 		restored := cred.Clone()
-		restored.Status = StatusActive
+		restored.Status = credential.StatusActive
 		_ = m.Update(ctx, restored)
 		return
 	}
 
 	updated.LastRefreshedAt = time.Now().UTC()
-	if updated.Status == "" || updated.Status == StatusRefreshing {
-		updated.Status = StatusActive
+	if updated.Status == "" || updated.Status == credential.StatusRefreshing {
+		updated.Status = credential.StatusActive
 	}
 	_ = m.Update(ctx, updated)
 }
 
 // snapshotAuths returns a snapshot of all credentials for scheduler rebuild.
-func (m *Manager) snapshotAuths() []*Credential {
+func (m *Manager) snapshotAuths() []*credential.Credential {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	out := make([]*Credential, 0, len(m.creds))
+	out := make([]*credential.Credential, 0, len(m.creds))
 	for _, cred := range m.creds {
 		out = append(out, cred.Clone())
 	}
@@ -652,7 +654,7 @@ func (m *Manager) syncScheduler() {
 	m.scheduler.rebuild(m.snapshotAuths())
 }
 
-func (m *Manager) persist(ctx context.Context, cred *Credential) error {
+func (m *Manager) persist(ctx context.Context, cred *credential.Credential) error {
 	if m.store == nil {
 		return nil
 	}

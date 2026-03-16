@@ -13,7 +13,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/agent-guide/caddy-llm/llm/auth/manager"
+	"github.com/agent-guide/caddy-llm/llm/auth/credential"
 	"github.com/google/uuid"
 )
 
@@ -70,7 +70,7 @@ func (a *ClaudeAuthenticator) Provider() string {
 }
 
 // Login initiates the Claude CLI login flow and returns a new Credential on success.
-func (a *ClaudeAuthenticator) Login(ctx context.Context) (*manager.Credential, error) {
+func (a *ClaudeAuthenticator) Login(ctx context.Context) (*credential.Credential, error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -79,7 +79,7 @@ func (a *ClaudeAuthenticator) Login(ctx context.Context) (*manager.Credential, e
 
 // RefreshLead refreshes the credential's access token before it expires.
 // Returns nil if no refresh token is present.
-func (a *ClaudeAuthenticator) RefreshLead(ctx context.Context, cred *manager.Credential) (*manager.Credential, error) {
+func (a *ClaudeAuthenticator) RefreshLead(ctx context.Context, cred *credential.Credential) (*credential.Credential, error) {
 	if cred == nil {
 		return nil, fmt.Errorf("claude: credential is nil")
 	}
@@ -104,7 +104,7 @@ func (a *ClaudeAuthenticator) RefreshLead(ctx context.Context, cred *manager.Cre
 
 // ---- Browser-based OAuth PKCE flow ----
 
-func (a *ClaudeAuthenticator) loginWithBrowser(ctx context.Context) (*manager.Credential, error) {
+func (a *ClaudeAuthenticator) loginWithBrowser(ctx context.Context) (*credential.Credential, error) {
 	codeVerifier, codeChallenge, err := generatePKCECodes()
 	if err != nil {
 		return nil, fmt.Errorf("claude: PKCE generation failed: %w", err)
@@ -245,11 +245,11 @@ func (a *ClaudeAuthenticator) refreshTokensWithRetry(ctx context.Context, refres
 
 // ---- Credential builder ----
 
-func (a *ClaudeAuthenticator) buildCredential(tokenResp *claudeTokenResponse) (*manager.Credential, error) {
-	cred := &manager.Credential{
+func (a *ClaudeAuthenticator) buildCredential(tokenResp *claudeTokenResponse) (*credential.Credential, error) {
+	cred := &credential.Credential{
 		ID:         uuid.New().String(),
 		Provider:   a.Provider(),
-		Status:     manager.StatusActive,
+		Status:     credential.StatusActive,
 		Metadata:   make(map[string]any),
 		Attributes: make(map[string]string),
 	}
@@ -274,7 +274,7 @@ func (a *ClaudeAuthenticator) buildCredential(tokenResp *claudeTokenResponse) (*
 }
 
 // applyTokenToMetadata writes token fields into cred.Metadata.
-func (a *ClaudeAuthenticator) applyTokenToMetadata(cred *manager.Credential, tokenResp *claudeTokenResponse) {
+func (a *ClaudeAuthenticator) applyTokenToMetadata(cred *credential.Credential, tokenResp *claudeTokenResponse) {
 	if cred.Metadata == nil {
 		cred.Metadata = make(map[string]any)
 	}

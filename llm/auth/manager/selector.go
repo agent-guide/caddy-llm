@@ -8,11 +8,13 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/agent-guide/caddy-llm/llm/auth/credential"
 )
 
 // Selector chooses a credential candidate for a request.
 type Selector interface {
-	Pick(ctx context.Context, provider, model string, creds []*Credential) (*Credential, error)
+	Pick(ctx context.Context, provider, model string, creds []*credential.Credential) (*credential.Credential, error)
 }
 
 // RoundRobinSelector provides a provider-scoped round-robin selection strategy.
@@ -38,11 +40,11 @@ const (
 
 // isCredentialBlockedForModel reports whether a credential is blocked for the given model.
 // Returns (blocked, reason, nextRetry).
-func isCredentialBlockedForModel(cred *Credential, model string, now time.Time) (bool, blockReason, time.Time) {
+func isCredentialBlockedForModel(cred *credential.Credential, model string, now time.Time) (bool, blockReason, time.Time) {
 	if cred == nil {
 		return true, blockReasonOther, time.Time{}
 	}
-	if cred.Disabled || cred.Status == StatusDisabled {
+	if cred.Disabled || cred.Status == credential.StatusDisabled {
 		return true, blockReasonDisabled, time.Time{}
 	}
 
@@ -57,7 +59,7 @@ func isCredentialBlockedForModel(cred *Credential, model string, now time.Time) 
 			}
 		}
 		if ok && state != nil {
-			if state.Status == StatusDisabled {
+			if state.Status == credential.StatusDisabled {
 				return true, blockReasonDisabled, time.Time{}
 			}
 			if state.Unavailable && !state.NextRetryAfter.IsZero() && state.NextRetryAfter.After(now) {
@@ -100,7 +102,7 @@ func canonicalModelKey(model string) string {
 }
 
 // credentialPriority returns the scheduling priority for a credential.
-func credentialPriority(cred *Credential) int {
+func credentialPriority(cred *credential.Credential) int {
 	if cred == nil {
 		return 0
 	}
@@ -109,13 +111,13 @@ func credentialPriority(cred *Credential) int {
 
 // getAvailableCredentials filters the candidate list to those currently available,
 // grouping by priority and returning the highest-priority group.
-func getAvailableCredentials(creds []*Credential, provider, model string, now time.Time) ([]*Credential, error) {
+func getAvailableCredentials(creds []*credential.Credential, provider, model string, now time.Time) ([]*credential.Credential, error) {
 	if len(creds) == 0 {
-		return nil, &Error{Code: "credential_not_found", Message: "no credentials configured"}
+		return nil, &credential.Error{Code: "credential_not_found", Message: "no credentials configured"}
 	}
 
 	type group struct {
-		creds         []*Credential
+		creds         []*credential.Credential
 		cooldownCount int
 		earliest      time.Time
 	}
@@ -155,7 +157,7 @@ func getAvailableCredentials(creds []*Credential, provider, model string, now ti
 				resetIn:  formatDuration(resetIn),
 			}
 		}
-		return nil, &Error{Code: "credential_unavailable", Message: "no credentials available"}
+		return nil, &credential.Error{Code: "credential_unavailable", Message: "no credentials available"}
 	}
 
 	// Pick the highest priority.
@@ -184,7 +186,7 @@ func formatDuration(d time.Duration) string {
 }
 
 // Pick selects the next available credential using round-robin per provider+model.
-func (s *RoundRobinSelector) Pick(ctx context.Context, provider, model string, creds []*Credential) (*Credential, error) {
+func (s *RoundRobinSelector) Pick(ctx context.Context, provider, model string, creds []*credential.Credential) (*credential.Credential, error) {
 	now := time.Now()
 	available, err := getAvailableCredentials(creds, provider, model, now)
 	if err != nil {
@@ -218,7 +220,7 @@ func (s *RoundRobinSelector) Pick(ctx context.Context, provider, model string, c
 }
 
 // Pick selects the first available credential deterministically.
-func (s *FillFirstSelector) Pick(_ context.Context, provider, model string, creds []*Credential) (*Credential, error) {
+func (s *FillFirstSelector) Pick(_ context.Context, provider, model string, creds []*credential.Credential) (*credential.Credential, error) {
 	now := time.Now()
 	available, err := getAvailableCredentials(creds, provider, model, now)
 	if err != nil {

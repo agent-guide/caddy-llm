@@ -5,6 +5,9 @@ import (
 
 	"github.com/caddyserver/caddy/v2"
 	"go.uber.org/zap"
+
+	"github.com/agent-guide/caddy-llm/llm/auth/authenticator"
+	"github.com/agent-guide/caddy-llm/llm/auth/manager"
 )
 
 func init() {
@@ -17,7 +20,8 @@ type App struct {
 	// Providers lists the configured LLM providers.
 	Providers []caddy.ModuleMap `json:"providers,omitempty" caddy:"namespace=llm.providers"`
 
-	logger *zap.Logger
+	logger      *zap.Logger
+	authManager *manager.Manager
 }
 
 // CaddyModule returns the Caddy module information.
@@ -31,8 +35,18 @@ func (App) CaddyModule() caddy.ModuleInfo {
 // Provision sets up the app.
 func (a *App) Provision(ctx caddy.Context) error {
 	a.logger = ctx.Logger(a)
+
+	// Initialize auth manager (no persistent store for now).
+	a.authManager = manager.NewManager(nil, nil, nil)
+	a.authManager.RegisterAuthenticator(authenticator.NewCodexAuthenticator())
+
 	a.logger.Info("LLM Gateway provisioned")
 	return nil
+}
+
+// AuthManager returns the credential manager shared across the gateway.
+func (a *App) AuthManager() *manager.Manager {
+	return a.authManager
 }
 
 // Validate validates the app configuration.
