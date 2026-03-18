@@ -6,9 +6,11 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"time"
 
 	"github.com/agent-guide/caddy-llm/llm/auth/manager"
 	"github.com/agent-guide/caddy-llm/llm/provider"
+	"github.com/cloudwego/eino/schema"
 )
 
 // Handler handles OpenAI-format API requests (/v1/chat/completions, etc.).
@@ -60,15 +62,16 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadGateway, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, conv.FromInternal(resp))
+	writeJSON(w, http.StatusOK, conv.FromInternal(resp, genReq.Model))
 }
 
 func (h *Handler) serveStream(w http.ResponseWriter, ctx context.Context, genReq *provider.GenerateRequest) {
-	result, err := h.prov.Stream(ctx, genReq)
+	stream, err := h.prov.Stream(ctx, genReq)
 	if err != nil {
 		writeError(w, http.StatusBadGateway, err.Error())
 		return
 	}
+	defer stream.Close()
 
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
@@ -76,15 +79,70 @@ func (h *Handler) serveStream(w http.ResponseWriter, ctx context.Context, genReq
 	w.WriteHeader(http.StatusOK)
 
 	flusher, canFlush := w.(http.Flusher)
-	for chunk := range result.Chunks {
-		if chunk.Err != nil {
+	for {
+		chunk, err := stream.Recv()
+		if err == io.EOF {
 			break
 		}
-		fmt.Fprintf(w, "data: %s\n\n", chunk.Payload)
+		if err != nil {
+			break
+		}
+
+		payload, err := json.Marshal(toStreamChunk(genReq.Model, chunk))
+		if err != nil {
+			break
+		}
+		fmt.Fprintf(w, "data: %s\n\n", payload)
 		if canFlush {
 			flusher.Flush()
 		}
 	}
+	fmt.Fprint(w, "data: [DONE]\n\n")
+	if canFlush {
+		flusher.Flush()
+	}
+}
+
+type chatCompletionChunk struct {
+	ID      string        `json:"id"`
+	Object  string        `json:"object"`
+	Created int64         `json:"created"`
+	Model   string        `json:"model"`
+	Choices []chunkChoice `json:"choices"`
+}
+
+type chunkChoice struct {
+	Index        int        `json:"index"`
+	Delta        chunkDelta `json:"delta"`
+	FinishReason string     `json:"finish_reason,omitempty"`
+}
+
+type chunkDelta struct {
+	Role      string            `json:"role,omitempty"`
+	Content   string            `json:"content,omitempty"`
+	ToolCalls []schema.ToolCall `json:"tool_calls,omitempty"`
+}
+
+func toStreamChunk(model string, msg *schema.Message) *chatCompletionChunk {
+	chunk := &chatCompletionChunk{
+		Object:  "chat.completion.chunk",
+		Created: time.Now().Unix(),
+		Model:   model,
+		Choices: []chunkChoice{{
+			Index: 0,
+			Delta: chunkDelta{
+				Role:    string(msg.Role),
+				Content: msg.Content,
+			},
+		}},
+	}
+	if len(msg.ToolCalls) > 0 {
+		chunk.Choices[0].Delta.ToolCalls = msg.ToolCalls
+	}
+	if msg.ResponseMeta != nil {
+		chunk.Choices[0].FinishReason = msg.ResponseMeta.FinishReason
+	}
+	return chunk
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {

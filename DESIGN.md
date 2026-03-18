@@ -113,12 +113,9 @@ Client Request → Auth → llmapi Handler → Agent Orchestrator
 #### 3.1.1 Interface Definition
 ```go
 // Provider defines the interface for LLM providers.
-// Design: small, focused interface (5 methods). Providers with extra capabilities
-// implement optional interfaces (e.g. EmbeddingProvider).
 type Provider interface {
     Generate(ctx context.Context, req *GenerateRequest) (*GenerateResponse, error)
-    Stream(ctx context.Context, req *GenerateRequest) (*StreamResult, error)
-    CountTokens(ctx context.Context, req *GenerateRequest) (*TokenCountResponse, error)
+    Stream(ctx context.Context, req *GenerateRequest) (*schema.StreamReader[*schema.Message], error)
     ListModels(ctx context.Context) ([]ModelInfo, error)
     Capabilities() ProviderCapabilities
 }
@@ -137,27 +134,12 @@ type StatusError interface {
     StatusCode() int
 }
 
-// StreamResult wraps streaming output: upstream headers captured before
-// streaming begins, and a channel of raw provider-format JSON chunks.
-type StreamResult struct {
-    Headers http.Header
-    Chunks  <-chan StreamChunk
-}
-
-// StreamChunk is a single chunk emitted during streaming.
-type StreamChunk struct {
-    Payload []byte // raw provider JSON chunk
-    Err     error  // non-nil for terminal stream errors
-}
-
 // ProviderCapabilities describes what a provider instance supports.
 type ProviderCapabilities struct {
     Streaming       bool
     Tools           bool
     Vision          bool
-    Audio           bool
     Embeddings      bool
-    FineTuning      bool
     ContextWindow   int
     MaxOutputTokens int
 }
@@ -183,38 +165,33 @@ type NetworkConfig struct {
 
 // GenerateRequest is the unified internal request format passed to providers.
 type GenerateRequest struct {
-    Model       string
-    Messages    []Message
-    System      string // system prompt (Anthropic-style; providers convert as needed)
-    Tools       []Tool
-    ToolChoice  *ToolChoice
-    Temperature *float64
-    MaxTokens   int
-    TopP        *float64
-    TopK        *int
-    Stop        []string
-    Stream      bool
-    Thinking    *ThinkingConfig
-    Metadata    map[string]any
+    Model    string
+    Messages []*schema.Message
+    Options  []model.Option
+}
+
+// GenerateResponse is the unified internal response format returned by providers.
+type GenerateResponse struct {
+    Message *schema.Message
 }
 ```
 
 #### 3.1.2 Supported Providers
 | Provider | Registry Key | Status | Notes |
 |----------|-------------|--------|-------|
-| OpenAI | `openai` | ✅ Implemented | Full; also implements `EmbeddingProvider` |
-| Anthropic | `anthropic` | ✅ Implemented | Native `CountTokens`; `x-api-key` auth; extended thinking |
-| Google Gemini | `gemini` | ✅ Implemented | Native `CountTokens`; `?key=` URL auth; SSE via `alt=sse` |
-| Groq | `groq` | ✅ Implemented | OpenAI-compatible; wraps `openaicompat.Base` |
-| Mistral | `mistral` | ✅ Implemented | OpenAI-compatible; wraps `openaicompat.Base` |
-| Ollama | `ollama` | ✅ Implemented | Local; no API key required; wraps `openaicompat.Base` |
-| OpenRouter | `openrouter` | ✅ Implemented | OpenAI-compatible; set `HTTP-Referer`/`X-Title` via `ExtraHeaders` |
+| OpenAI | `openai` | ✅ Implemented | `Generate/Stream` via Eino ChatModel; also implements `EmbeddingProvider` |
+| Anthropic | `anthropic` | ✅ Implemented | `Generate/Stream` via Eino Claude; `ListModels` via native HTTP |
+| Google Gemini | `gemini` | ✅ Implemented | `Generate/Stream` via Eino Gemini; `ListModels` via native HTTP |
+| Ollama | `ollama` | ✅ Implemented | OpenAI-compatible base for `ListModels`/embed; chat via Eino |
+| OpenRouter | `openrouter` | ✅ Implemented | OpenAI-compatible base for `ListModels`; chat via Eino |
 
 #### 3.1.3 Shared HTTP Utilities
-Two internal packages avoid code duplication across providers:
+The provider layer now shares two main helper files/packages:
 
-- **`llm/provider/httputil/`**: `NewSSEScanner` (10 MB bufio.Scanner), `ParseSSELine` (strips `data:` prefix, detects `[DONE]`), `CheckResponse` (returns `StatusError` on non-2xx).
-- **`llm/provider/openaicompat/`**: `Base` struct implementing `Generate`, `Stream`, `CountTokens` (heuristic), `ListModels`, `Embed` for any OpenAI-compatible endpoint. Groq, Mistral, Ollama, OpenRouter embed `*Base` and supply only `Capabilities()` and their default `BaseURL`.
+- **`llm/provider/httputil.go`**: `CheckResponse`, `BuildHTTPClient`, credential resolution, and per-request auth/header helpers.
+- **`llm/provider/openaibase/`**: shared OpenAI-compatible base for `ListModels`, `Embed`, and common header handling. Used by OpenAI, Ollama, and OpenRouter.
+
+Chat execution no longer goes through a shared hand-written HTTP chat base. `Generate/Stream` use Eino ChatModel implementations directly.
 
 #### 3.1.4 Provider Registration
 ```go
@@ -435,8 +412,8 @@ type AgentOrchestrator interface {
 type AgentRequest struct {
     SessionID    string
     AgentID      string
-    Messages     []Message
-    Tools        []Tool
+    Messages     []*schema.Message
+    Tools        []*schema.ToolInfo
     Config       *AgentConfig
     EnableMCP    bool
     EnableMemory bool
@@ -453,11 +430,9 @@ type AgentConfig struct {
 
 // AgentResponse agent-mode response
 type AgentResponse struct {
-    SessionID     string
-    Messages      []Message
-    ToolCalls     []ToolCallResult
-    Memories      []*Memory
-    Observability *ObservabilityData
+    SessionID string
+    Messages  []*schema.Message
+    Usage     Usage
 }
 ```
 
@@ -912,31 +887,23 @@ caddy-llm/
 │   ├── provider/                    # Provider submodule
 │   │   ├── provider.go              # Interface + all shared types ✅
 │   │   ├── registry.go              # Thread-safe provider factory registry ✅
-│   │   ├── httputil/                # Shared HTTP utilities ✅
-│   │   │   ├── sse.go               #   NewSSEScanner, ParseSSELine
-│   │   │   └── error.go             #   CheckResponse → StatusError
-│   │   ├── openaicompat/            # Shared OpenAI-compatible base ✅
-│   │   │   ├── types.go             #   Wire types (ChatRequest/Response, Embed…)
-│   │   │   ├── convert.go           #   Internal ↔ OpenAI conversion
-│   │   │   └── provider.go          #   Base struct: Generate/Stream/CountTokens/ListModels/Embed
+│   │   ├── httputil.go              # Shared HTTP/client/credential helpers ✅
+│   │   ├── eino.go                  # Eino option/message helpers ✅
+│   │   ├── openaibase/              # Shared OpenAI-compatible base ✅
+│   │   │   ├── types.go             #   Wire types for list-models/embeddings
+│   │   │   └── provider.go          #   Base struct: ListModels/Embed/header handling
 │   │   ├── openai/
-│   │   │   └── provider.go          # Wraps openaicompat.Base + EmbeddingProvider ✅
+│   │   │   └── provider.go          # Eino OpenAI chat + openaibase embed/list ✅
 │   │   ├── anthropic/
 │   │   │   ├── types.go             # Anthropic wire types ✅
-│   │   │   ├── convert.go           # Internal ↔ Anthropic conversion ✅
-│   │   │   └── provider.go          # Native CountTokens, x-api-key, thinking ✅
+│   │   │   └── provider.go          # Eino Claude chat + native list-models ✅
 │   │   ├── gemini/
 │   │   │   ├── types.go             # Gemini wire types ✅
-│   │   │   ├── convert.go           # Internal ↔ Gemini conversion ✅
-│   │   │   └── provider.go          # URL ?key= auth, native CountTokens ✅
-│   │   ├── groq/
-│   │   │   └── provider.go          # Wraps openaicompat.Base ✅
-│   │   ├── mistral/
-│   │   │   └── provider.go          # Wraps openaicompat.Base ✅
+│   │   │   └── provider.go          # Eino Gemini chat + native list-models ✅
 │   │   ├── ollama/
-│   │   │   └── provider.go          # Wraps openaicompat.Base, no API key ✅
+│   │   │   └── provider.go          # Eino Ollama chat + openaibase list ✅
 │   │   └── openrouter/
-│   │       └── provider.go          # Wraps openaicompat.Base ✅
+│   │       └── provider.go          # Eino OpenRouter chat + openaibase list ✅
 │   │
 │   ├── mcp/                         # MCP submodule
 │   │   ├── manager.go               # MCPManager interface + Manager struct 🔧
@@ -1055,11 +1022,11 @@ caddy-llm/
 
 ### Phase 1: Core Infrastructure ✅ Done
 - [x] Project restructure (Caddy modules: `llm` app + `http.handlers.llm` handler)
-- [x] Core interface definitions (`Provider`, `EmbeddingProvider`, `StatusError`, `StreamResult`)
+- [x] Core interface definitions (`Provider`, `EmbeddingProvider`, `StatusError`)
 - [x] Provider registry (thread-safe, `init()`-based registration)
-- [x] All 7 providers implemented: OpenAI, Anthropic, Gemini, Groq, Mistral, Ollama, OpenRouter
-- [x] Shared `httputil` package (SSE scanner, `CheckResponse`)
-- [x] Shared `openaicompat` base (OpenAI-compatible providers share one implementation)
+- [x] Current providers implemented: OpenAI, Anthropic, Gemini, Ollama, OpenRouter
+- [x] Shared `httputil.go` helpers (`CheckResponse`, HTTP client, credential/header handling)
+- [x] Shared `openaibase` package (OpenAI-compatible list-models / embeddings / headers)
 - [x] Config module: `Store` + `Manager` interfaces; SQLite backend skeleton
 - [x] Memory module: `MemoryStore`, `Backend`, `VectorStore`, `Embedder` interfaces
 - [x] MCP module: `Client`, `Transport` interfaces; JSON-RPC Message type

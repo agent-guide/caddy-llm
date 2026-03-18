@@ -13,8 +13,6 @@ import (
 	// LLM Providers (register via init())
 	_ "github.com/agent-guide/caddy-llm/llm/provider/anthropic"
 	_ "github.com/agent-guide/caddy-llm/llm/provider/gemini"
-	_ "github.com/agent-guide/caddy-llm/llm/provider/groq"
-	_ "github.com/agent-guide/caddy-llm/llm/provider/mistral"
 	_ "github.com/agent-guide/caddy-llm/llm/provider/ollama"
 	_ "github.com/agent-guide/caddy-llm/llm/provider/openai"
 	_ "github.com/agent-guide/caddy-llm/llm/provider/openrouter"

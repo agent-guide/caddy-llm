@@ -2,15 +2,17 @@
 package anthropic
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"time"
 
+	einoclaude "github.com/cloudwego/eino-ext/components/model/claude"
+	einomodel "github.com/cloudwego/eino/components/model"
+	"github.com/cloudwego/eino/schema"
+
 	"github.com/agent-guide/caddy-llm/llm/provider"
-	"github.com/agent-guide/caddy-llm/llm/provider/httputil"
 )
 
 const anthropicVersion = "2023-06-01"
@@ -48,135 +50,29 @@ func New(config provider.ProviderConfig) (provider.Provider, error) {
 }
 
 func (p *anthropicProvider) Generate(ctx context.Context, req *provider.GenerateRequest) (*provider.GenerateResponse, error) {
-	anthReq := BuildRequest(req, false)
-
-	body, err := json.Marshal(anthReq)
-	if err != nil {
-		return nil, fmt.Errorf("anthropic: marshal request: %w", err)
-	}
-
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost,
-		p.config.BaseURL+"/v1/messages", bytes.NewReader(body))
-	if err != nil {
-		return nil, fmt.Errorf("anthropic: build request: %w", err)
-	}
-	p.setHeaders(httpReq)
-
-	resp, err := p.client.Do(httpReq)
-	if err != nil {
-		return nil, fmt.Errorf("anthropic: request failed: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if err := httputil.CheckResponse(resp); err != nil {
-		return nil, err
-	}
-
-	var messagesResp MessagesResponse
-	if err := json.NewDecoder(resp.Body).Decode(&messagesResp); err != nil {
-		return nil, fmt.Errorf("anthropic: decode response: %w", err)
-	}
-	return ConvertResponse(&messagesResp, resp.Header.Clone()), nil
+	return provider.RetryGenerate(p.config.Network, func() (*provider.GenerateResponse, error) {
+		chatModel, messages, opts, err := p.newChatModel(ctx, req)
+		if err != nil {
+			return nil, err
+		}
+		msg, err := chatModel.Generate(ctx, messages, opts...)
+		if err != nil {
+			return nil, provider.WrapEinoError(err)
+		}
+		return provider.FromEinoMessage(msg), nil
+	})
 }
 
-func (p *anthropicProvider) Stream(ctx context.Context, req *provider.GenerateRequest) (*provider.StreamResult, error) {
-	anthReq := BuildRequest(req, true)
-
-	body, err := json.Marshal(anthReq)
+func (p *anthropicProvider) Stream(ctx context.Context, req *provider.GenerateRequest) (*schema.StreamReader[*schema.Message], error) {
+	chatModel, messages, opts, err := p.newChatModel(ctx, req)
 	if err != nil {
-		return nil, fmt.Errorf("anthropic: marshal request: %w", err)
-	}
-
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost,
-		p.config.BaseURL+"/v1/messages", bytes.NewReader(body))
-	if err != nil {
-		return nil, fmt.Errorf("anthropic: build request: %w", err)
-	}
-	p.setHeaders(httpReq)
-
-	resp, err := p.client.Do(httpReq)
-	if err != nil {
-		return nil, fmt.Errorf("anthropic: request failed: %w", err)
-	}
-	if err := httputil.CheckResponse(resp); err != nil {
-		resp.Body.Close()
 		return nil, err
 	}
-
-	ch := make(chan provider.StreamChunk, 16)
-	result := &provider.StreamResult{
-		Headers: resp.Header.Clone(),
-		Chunks:  ch,
-	}
-
-	go func() {
-		defer resp.Body.Close()
-		defer close(ch)
-
-		scanner := httputil.NewSSEScanner(resp.Body)
-		for scanner.Scan() {
-			select {
-			case <-ctx.Done():
-				ch <- provider.StreamChunk{Err: ctx.Err()}
-				return
-			default:
-			}
-			payload, isDone, ok := httputil.ParseSSELine(scanner.Bytes())
-			if !ok {
-				continue
-			}
-			if isDone {
-				return
-			}
-			chunk := make([]byte, len(payload))
-			copy(chunk, payload)
-			ch <- provider.StreamChunk{Payload: chunk}
-		}
-		if err := scanner.Err(); err != nil {
-			ch <- provider.StreamChunk{Err: fmt.Errorf("anthropic: scan stream: %w", err)}
-		}
-	}()
-
-	return result, nil
-}
-
-// CountTokens uses the native Anthropic /v1/messages/count_tokens endpoint.
-func (p *anthropicProvider) CountTokens(ctx context.Context, req *provider.GenerateRequest) (*provider.TokenCountResponse, error) {
-	anthReq := BuildRequest(req, false)
-	countReq := &CountTokensRequest{
-		Model:    anthReq.Model,
-		Messages: anthReq.Messages,
-		System:   anthReq.System,
-		Tools:    anthReq.Tools,
-	}
-
-	body, err := json.Marshal(countReq)
+	stream, err := chatModel.Stream(ctx, messages, opts...)
 	if err != nil {
-		return nil, fmt.Errorf("anthropic: marshal count_tokens request: %w", err)
+		return nil, provider.WrapEinoError(err)
 	}
-
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost,
-		p.config.BaseURL+"/v1/messages/count_tokens", bytes.NewReader(body))
-	if err != nil {
-		return nil, fmt.Errorf("anthropic: build count_tokens request: %w", err)
-	}
-	p.setHeaders(httpReq)
-
-	resp, err := p.client.Do(httpReq)
-	if err != nil {
-		return nil, fmt.Errorf("anthropic: count_tokens request failed: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if err := httputil.CheckResponse(resp); err != nil {
-		return nil, err
-	}
-
-	var countResp CountTokensResponse
-	if err := json.NewDecoder(resp.Body).Decode(&countResp); err != nil {
-		return nil, fmt.Errorf("anthropic: decode count_tokens response: %w", err)
-	}
-	return &provider.TokenCountResponse{InputTokens: countResp.InputTokens}, nil
+	return stream, nil
 }
 
 // ListModels fetches available Claude models from GET /v1/models.
@@ -194,7 +90,7 @@ func (p *anthropicProvider) ListModels(ctx context.Context) ([]provider.ModelInf
 	}
 	defer resp.Body.Close()
 
-	if err := httputil.CheckResponse(resp); err != nil {
+	if err := provider.CheckResponse(resp); err != nil {
 		return nil, err
 	}
 
@@ -218,6 +114,37 @@ func (p *anthropicProvider) Capabilities() provider.ProviderCapabilities {
 		ContextWindow:   200000,
 		MaxOutputTokens: 8192,
 	}
+}
+
+func (p *anthropicProvider) newChatModel(ctx context.Context, req *provider.GenerateRequest) (einomodel.ToolCallingChatModel, []*schema.Message, []einomodel.Option, error) {
+	state, err := provider.ResolveChatRequest(ctx, p.config, req)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+
+	maxTokens := 0
+	if state.CommonOptions.MaxTokens != nil {
+		maxTokens = *state.CommonOptions.MaxTokens
+	}
+	if maxTokens <= 0 {
+		maxTokens = 4096
+	}
+
+	cfg := &einoclaude.Config{
+		APIKey:     state.APIKey,
+		Model:      state.ModelName,
+		MaxTokens:  maxTokens,
+		HTTPClient: provider.BuildHTTPClient(p.config, nil, state.Credential),
+	}
+	if state.BaseURL != "" {
+		cfg.BaseURL = &state.BaseURL
+	}
+
+	chatModel, err := einoclaude.NewChatModel(ctx, cfg)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	return chatModel, state.Messages, state.Options, nil
 }
 
 func (p *anthropicProvider) setHeaders(req *http.Request) {

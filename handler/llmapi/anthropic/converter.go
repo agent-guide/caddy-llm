@@ -1,6 +1,9 @@
 package anthropic
 
 import (
+	einomodel "github.com/cloudwego/eino/components/model"
+	"github.com/cloudwego/eino/schema"
+
 	"github.com/agent-guide/caddy-llm/llm/provider"
 )
 
@@ -9,55 +12,82 @@ type Converter struct{}
 
 // ToInternal converts an Anthropic MessagesRequest to the internal GenerateRequest.
 func (c *Converter) ToInternal(req *MessagesRequest) *provider.GenerateRequest {
-	msgs := make([]provider.Message, len(req.Messages))
-	for i, m := range req.Messages {
-		msgs[i] = provider.Message{
-			Role:    m.Role,
-			Content: convertContentBlocks(m.Content),
-		}
+	msgs := make([]*schema.Message, 0, len(req.Messages)+1)
+	if req.System != "" {
+		msgs = append(msgs, schema.SystemMessage(req.System))
+	}
+	for _, m := range req.Messages {
+		msgs = append(msgs, &schema.Message{
+			Role:    schema.RoleType(m.Role),
+			Content: contentText(m.Content),
+		})
+	}
+	var opts []einomodel.Option
+	if req.Temperature != 0 {
+		opts = append(opts, einomodel.WithTemperature(float32(req.Temperature)))
+	}
+	if req.TopP != 0 {
+		opts = append(opts, einomodel.WithTopP(float32(req.TopP)))
+	}
+	if req.MaxTokens > 0 {
+		opts = append(opts, einomodel.WithMaxTokens(req.MaxTokens))
+	}
+	if len(req.StopSequences) > 0 {
+		opts = append(opts, einomodel.WithStop(req.StopSequences))
 	}
 
 	genReq := &provider.GenerateRequest{
-		Model:     req.Model,
-		Messages:  msgs,
-		MaxTokens: req.MaxTokens,
-		Stream:    req.Stream,
-	}
-	if req.Temperature != 0 {
-		t := req.Temperature
-		genReq.Temperature = &t
-	}
-	if req.TopP != 0 {
-		p := req.TopP
-		genReq.TopP = &p
+		Model:    req.Model,
+		Messages: msgs,
+		Options:  opts,
 	}
 	return genReq
 }
 
 // FromInternal converts an internal GenerateResponse to an Anthropic MessagesResponse.
-func (c *Converter) FromInternal(resp *provider.GenerateResponse) *MessagesResponse {
-	content := make([]ContentBlockResponse, len(resp.Content))
-	for i, b := range resp.Content {
-		content[i] = ContentBlockResponse{Type: b.Type, Text: b.Text}
-	}
+func (c *Converter) FromInternal(resp *provider.GenerateResponse, model string) *MessagesResponse {
+	content := convertResponseContent(resp)
+	usage := provider.UsageFromMessage(resp.Message)
 	return &MessagesResponse{
-		ID:         resp.ID,
+		ID:         "",
 		Type:       "message",
 		Role:       "assistant",
-		Model:      resp.Model,
+		Model:      model,
 		Content:    content,
-		StopReason: resp.StopReason,
+		StopReason: provider.FinishReason(resp.Message),
 		Usage: UsageResponse{
-			InputTokens:  resp.Usage.InputTokens,
-			OutputTokens: resp.Usage.OutputTokens,
+			InputTokens:  usage.InputTokens,
+			OutputTokens: usage.OutputTokens,
 		},
 	}
 }
 
-func convertContentBlocks(blocks []ContentBlock) []provider.ContentBlock {
-	out := make([]provider.ContentBlock, len(blocks))
+func convertResponseContent(resp *provider.GenerateResponse) []ContentBlockResponse {
+	return contentFromMessage(resp.Message)
+}
+
+func contentFromMessage(msg *schema.Message) []ContentBlockResponse {
+	if msg == nil {
+		return nil
+	}
+
+	content := make([]ContentBlockResponse, 0, 1+len(msg.ToolCalls))
+	if msg.Content != "" {
+		content = append(content, ContentBlockResponse{Type: "text", Text: msg.Content})
+	}
+	for range msg.ToolCalls {
+		content = append(content, ContentBlockResponse{Type: "tool_use"})
+	}
+	return content
+}
+
+func contentText(blocks []ContentBlock) string {
+	var out string
 	for i, b := range blocks {
-		out[i] = provider.ContentBlock{Type: b.Type, Text: b.Text}
+		if i > 0 && out != "" && b.Text != "" {
+			out += "\n"
+		}
+		out += b.Text
 	}
 	return out
 }

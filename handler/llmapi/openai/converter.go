@@ -1,6 +1,11 @@
 package openai
 
-import "github.com/agent-guide/caddy-llm/llm/provider"
+import (
+	einomodel "github.com/cloudwego/eino/components/model"
+	"github.com/cloudwego/eino/schema"
+
+	"github.com/agent-guide/caddy-llm/llm/provider"
+)
 
 // Converter converts between OpenAI API format and internal format.
 type Converter struct{}
@@ -48,50 +53,55 @@ type Usage struct {
 
 // ToInternal converts an OpenAI ChatCompletionRequest to the internal GenerateRequest.
 func (c *Converter) ToInternal(req *ChatCompletionRequest) *provider.GenerateRequest {
-	msgs := make([]provider.Message, len(req.Messages))
+	msgs := make([]*schema.Message, len(req.Messages))
 	for i, m := range req.Messages {
-		msgs[i] = provider.Message{
-			Role: m.Role,
-			Content: []provider.ContentBlock{
-				{Type: "text", Text: m.Content},
-			},
-		}
+		msgs[i] = &schema.Message{Role: schema.RoleType(m.Role), Content: m.Content}
+	}
+	var opts []einomodel.Option
+	if req.Temperature != 0 {
+		opts = append(opts, einomodel.WithTemperature(float32(req.Temperature)))
+	}
+	if req.TopP != 0 {
+		opts = append(opts, einomodel.WithTopP(float32(req.TopP)))
+	}
+	if req.MaxTokens > 0 {
+		opts = append(opts, einomodel.WithMaxTokens(req.MaxTokens))
+	}
+	if len(req.Stop) > 0 {
+		opts = append(opts, einomodel.WithStop(req.Stop))
 	}
 	genReq := &provider.GenerateRequest{
-		Model:     req.Model,
-		Messages:  msgs,
-		MaxTokens: req.MaxTokens,
-		Stream:    req.Stream,
-		Stop:      req.Stop,
-	}
-	if req.Temperature != 0 {
-		t := req.Temperature
-		genReq.Temperature = &t
+		Model:    req.Model,
+		Messages: msgs,
+		Options:  opts,
 	}
 	return genReq
 }
 
 // FromInternal converts an internal GenerateResponse to a ChatCompletionResponse.
-func (c *Converter) FromInternal(resp *provider.GenerateResponse) *ChatCompletionResponse {
-	var content string
-	for _, b := range resp.Content {
-		if b.Type == "text" {
-			content += b.Text
-		}
-	}
+func (c *Converter) FromInternal(resp *provider.GenerateResponse, model string) *ChatCompletionResponse {
+	content := messageText(resp.Message)
+	usage := provider.UsageFromMessage(resp.Message)
 	return &ChatCompletionResponse{
-		ID:     resp.ID,
+		ID:     "",
 		Object: "chat.completion",
-		Model:  resp.Model,
+		Model:  model,
 		Choices: []Choice{{
 			Index:        0,
 			Message:      ChatMessage{Role: "assistant", Content: content},
-			FinishReason: resp.StopReason,
+			FinishReason: provider.FinishReason(resp.Message),
 		}},
 		Usage: Usage{
-			PromptTokens:     resp.Usage.InputTokens,
-			CompletionTokens: resp.Usage.OutputTokens,
-			TotalTokens:      resp.Usage.InputTokens + resp.Usage.OutputTokens,
+			PromptTokens:     usage.InputTokens,
+			CompletionTokens: usage.OutputTokens,
+			TotalTokens:      usage.InputTokens + usage.OutputTokens,
 		},
 	}
+}
+
+func messageText(msg *schema.Message) string {
+	if msg == nil {
+		return ""
+	}
+	return msg.Content
 }

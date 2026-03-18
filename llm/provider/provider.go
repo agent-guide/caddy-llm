@@ -2,8 +2,10 @@ package provider
 
 import (
 	"context"
-	"net/http"
 	"time"
+
+	einomodel "github.com/cloudwego/eino/components/model"
+	"github.com/cloudwego/eino/schema"
 )
 
 // Provider defines the interface for LLM providers.
@@ -16,13 +18,8 @@ type Provider interface {
 	// Generate performs a non-streaming completion and returns the full response.
 	Generate(ctx context.Context, req *GenerateRequest) (*GenerateResponse, error)
 
-	// Stream performs a streaming completion and returns a StreamResult containing
-	// upstream response headers and a channel of chunks.
-	Stream(ctx context.Context, req *GenerateRequest) (*StreamResult, error)
-
-	// CountTokens returns the token count for the given request without generating
-	// a response. Used by /v1/messages/count_tokens and the agent orchestrator.
-	CountTokens(ctx context.Context, req *GenerateRequest) (*TokenCountResponse, error)
+	// Stream performs a streaming completion and returns an Eino message stream.
+	Stream(ctx context.Context, req *GenerateRequest) (*schema.StreamReader[*schema.Message], error)
 
 	// ListModels returns the list of models available from this provider.
 	ListModels(ctx context.Context) ([]ModelInfo, error)
@@ -52,9 +49,7 @@ type ProviderCapabilities struct {
 	Streaming       bool
 	Tools           bool
 	Vision          bool
-	Audio           bool
 	Embeddings      bool
-	FineTuning      bool
 	ContextWindow   int
 	MaxOutputTokens int
 }
@@ -115,53 +110,14 @@ func (c *NetworkConfig) Timeout() time.Duration {
 
 // GenerateRequest is the unified internal request format passed to providers.
 type GenerateRequest struct {
-	Model       string
-	Messages    []Message
-	System      string // system prompt (Anthropic style; providers that use system in messages will convert)
-	Tools       []Tool
-	ToolChoice  *ToolChoice
-	Temperature *float64
-	MaxTokens   int
-	TopP        *float64
-	TopK        *int
-	Stop        []string
-	Stream      bool
-	Thinking    *ThinkingConfig
-	Metadata    map[string]any
+	Model    string
+	Messages []*schema.Message
+	Options  []einomodel.Option
 }
 
 // GenerateResponse is the unified internal response format returned by providers.
 type GenerateResponse struct {
-	ID         string
-	Model      string
-	Content    []ContentBlock
-	StopReason string
-	Usage      Usage
-	// Headers carries upstream HTTP response headers (e.g. x-request-id, ratelimit-*).
-	Headers http.Header
-}
-
-// StreamChunk is a single chunk emitted during streaming.
-// Payload is the raw provider JSON chunk — the llmapi converter handles formatting.
-type StreamChunk struct {
-	// Payload is the raw provider-format chunk bytes.
-	Payload []byte
-	// Err is non-nil for terminal stream errors.
-	Err error
-}
-
-// StreamResult wraps streaming output: upstream headers captured before streaming
-// begins, and a channel of chunks.
-type StreamResult struct {
-	// Headers carries upstream response headers (captured before streaming starts).
-	Headers http.Header
-	// Chunks is the channel of raw streaming chunks from the provider.
-	Chunks <-chan StreamChunk
-}
-
-// TokenCountResponse is returned by CountTokens.
-type TokenCountResponse struct {
-	InputTokens int
+	Message *schema.Message
 }
 
 // EmbedRequest is the request to generate vector embeddings.
@@ -179,57 +135,6 @@ type EmbedResponse struct {
 	Usage      Usage
 }
 
-// --- Message types ---
-
-// Message represents a conversation turn.
-type Message struct {
-	Role    string
-	Content []ContentBlock
-}
-
-// ContentBlock is a typed block within a message.
-type ContentBlock struct {
-	Type       string
-	Text       string
-	ToolUse    *ToolUse
-	ToolResult *ToolResult
-}
-
-// ThinkingConfig controls extended thinking mode (Anthropic).
-type ThinkingConfig struct {
-	Enabled    bool
-	BudgetTokens int
-}
-
-// Tool represents a tool/function that the model can call.
-type Tool struct {
-	Name        string
-	Description string
-	InputSchema map[string]any
-}
-
-// ToolChoice controls how the model selects tools.
-type ToolChoice struct {
-	// Type is "auto", "any", or "tool".
-	Type string
-	// Name is the specific tool name when Type == "tool".
-	Name string
-}
-
-// ToolUse is a tool call request from the model.
-type ToolUse struct {
-	ID    string
-	Name  string
-	Input map[string]any
-}
-
-// ToolResult is the caller's response to a ToolUse.
-type ToolResult struct {
-	ToolUseID string
-	Content   string
-	IsError   bool
-}
-
 // ModelInfo describes a model available from a provider.
 type ModelInfo struct {
 	ID           string
@@ -240,24 +145,6 @@ type ModelInfo struct {
 
 // Usage contains token consumption information.
 type Usage struct {
-	InputTokens              int
-	OutputTokens             int
-	CacheCreationInputTokens int
-	CacheReadInputTokens     int
+	InputTokens  int
+	OutputTokens int
 }
-
-// --- Error helpers ---
-
-// httpStatusError is a simple StatusError implementation for use by providers.
-type httpStatusError struct {
-	code    int
-	message string
-}
-
-// NewStatusError creates a StatusError with the given HTTP status code.
-func NewStatusError(code int, message string) StatusError {
-	return &httpStatusError{code: code, message: message}
-}
-
-func (e *httpStatusError) Error() string  { return e.message }
-func (e *httpStatusError) StatusCode() int { return e.code }

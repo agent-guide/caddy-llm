@@ -2,16 +2,19 @@
 package gemini
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"strings"
-	"time"
 
+	einogemini "github.com/cloudwego/eino-ext/components/model/gemini"
+	einomodel "github.com/cloudwego/eino/components/model"
+	"github.com/cloudwego/eino/schema"
+	"google.golang.org/genai"
+
+	"github.com/agent-guide/caddy-llm/llm/auth/credential"
 	"github.com/agent-guide/caddy-llm/llm/provider"
-	"github.com/agent-guide/caddy-llm/llm/provider/httputil"
 )
 
 func init() {
@@ -19,8 +22,8 @@ func init() {
 }
 
 type geminiProvider struct {
-	config provider.ProviderConfig
-	client *http.Client
+	config      provider.ProviderConfig
+	genaiClient *genai.Client // cached default client (no credential override)
 }
 
 // New creates a new Google Gemini provider.
@@ -33,174 +36,56 @@ func New(config provider.ProviderConfig) (provider.Provider, error) {
 	}
 	config.Network.Defaults()
 
+	defaultClient, err := buildGenaiClient(context.Background(), config.APIKey, config.BaseURL, config.Network, nil)
+	if err != nil {
+		return nil, fmt.Errorf("gemini: init client: %w", err)
+	}
 	return &geminiProvider{
-		config: config,
-		client: &http.Client{
-			Timeout: config.Network.Timeout(),
-			Transport: &http.Transport{
-				MaxIdleConns:        100,
-				MaxIdleConnsPerHost: 20,
-				IdleConnTimeout:     90 * time.Second,
-			},
-		},
+		config:      config,
+		genaiClient: defaultClient,
 	}, nil
 }
 
-// generateURL returns the URL for generateContent or streamGenerateContent.
-func (p *geminiProvider) generateURL(model string, stream bool) string {
-	// Gemini URL pattern: /v1beta/models/{model}:{action}?key={apiKey}
-	action := "generateContent"
-	if stream {
-		action = "streamGenerateContent"
-	}
-	// Strip "models/" prefix if already present in model name.
-	modelID := strings.TrimPrefix(model, "models/")
-	return fmt.Sprintf("%s/v1beta/models/%s:%s?key=%s",
-		p.config.BaseURL, modelID, action, p.config.APIKey)
+// buildGenaiClient constructs a genai.Client with the given credentials and network config.
+// This is the single path for creating Gemini API clients in this package.
+func buildGenaiClient(ctx context.Context, apiKey, baseURL string, network provider.NetworkConfig, cred *credential.Credential) (*genai.Client, error) {
+	httpClient := provider.BuildHTTPClient(provider.ProviderConfig{Network: network}, nil, cred)
+	timeout := network.Timeout()
+	return genai.NewClient(ctx, &genai.ClientConfig{
+		APIKey:     apiKey,
+		HTTPClient: httpClient,
+		HTTPOptions: genai.HTTPOptions{
+			BaseURL:    baseURL,
+			APIVersion: "v1beta",
+			Timeout:    &timeout,
+		},
+	})
 }
 
 func (p *geminiProvider) Generate(ctx context.Context, req *provider.GenerateRequest) (*provider.GenerateResponse, error) {
-	model := req.Model
-	if model == "" {
-		model = p.config.DefaultModel
-	}
-
-	gemReq := BuildRequest(req)
-	body, err := json.Marshal(gemReq)
-	if err != nil {
-		return nil, fmt.Errorf("gemini: marshal request: %w", err)
-	}
-
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost,
-		p.generateURL(model, false), bytes.NewReader(body))
-	if err != nil {
-		return nil, fmt.Errorf("gemini: build request: %w", err)
-	}
-	p.setHeaders(httpReq)
-
-	resp, err := p.client.Do(httpReq)
-	if err != nil {
-		return nil, fmt.Errorf("gemini: request failed: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if err := httputil.CheckResponse(resp); err != nil {
-		return nil, err
-	}
-
-	var gemResp GenerateContentResponse
-	if err := json.NewDecoder(resp.Body).Decode(&gemResp); err != nil {
-		return nil, fmt.Errorf("gemini: decode response: %w", err)
-	}
-	return ConvertResponse(&gemResp, model, resp.Header.Clone()), nil
+	return provider.RetryGenerate(p.config.Network, func() (*provider.GenerateResponse, error) {
+		chatModel, messages, opts, err := p.newChatModel(ctx, req)
+		if err != nil {
+			return nil, err
+		}
+		msg, err := chatModel.Generate(ctx, messages, opts...)
+		if err != nil {
+			return nil, provider.WrapEinoError(err)
+		}
+		return provider.FromEinoMessage(msg), nil
+	})
 }
 
-func (p *geminiProvider) Stream(ctx context.Context, req *provider.GenerateRequest) (*provider.StreamResult, error) {
-	model := req.Model
-	if model == "" {
-		model = p.config.DefaultModel
-	}
-
-	gemReq := BuildRequest(req)
-	body, err := json.Marshal(gemReq)
+func (p *geminiProvider) Stream(ctx context.Context, req *provider.GenerateRequest) (*schema.StreamReader[*schema.Message], error) {
+	chatModel, messages, opts, err := p.newChatModel(ctx, req)
 	if err != nil {
-		return nil, fmt.Errorf("gemini: marshal request: %w", err)
-	}
-
-	// Gemini streaming uses alt=sse to get SSE format.
-	url := p.generateURL(model, true) + "&alt=sse"
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
-	if err != nil {
-		return nil, fmt.Errorf("gemini: build request: %w", err)
-	}
-	p.setHeaders(httpReq)
-
-	resp, err := p.client.Do(httpReq)
-	if err != nil {
-		return nil, fmt.Errorf("gemini: request failed: %w", err)
-	}
-	if err := httputil.CheckResponse(resp); err != nil {
-		resp.Body.Close()
 		return nil, err
 	}
-
-	ch := make(chan provider.StreamChunk, 16)
-	result := &provider.StreamResult{
-		Headers: resp.Header.Clone(),
-		Chunks:  ch,
-	}
-
-	go func() {
-		defer resp.Body.Close()
-		defer close(ch)
-
-		scanner := httputil.NewSSEScanner(resp.Body)
-		for scanner.Scan() {
-			select {
-			case <-ctx.Done():
-				ch <- provider.StreamChunk{Err: ctx.Err()}
-				return
-			default:
-			}
-			payload, isDone, ok := httputil.ParseSSELine(scanner.Bytes())
-			if !ok {
-				continue
-			}
-			if isDone {
-				return
-			}
-			chunk := make([]byte, len(payload))
-			copy(chunk, payload)
-			ch <- provider.StreamChunk{Payload: chunk}
-		}
-		if err := scanner.Err(); err != nil {
-			ch <- provider.StreamChunk{Err: fmt.Errorf("gemini: scan stream: %w", err)}
-		}
-	}()
-
-	return result, nil
-}
-
-// CountTokens uses the native Gemini countTokens endpoint.
-func (p *geminiProvider) CountTokens(ctx context.Context, req *provider.GenerateRequest) (*provider.TokenCountResponse, error) {
-	model := req.Model
-	if model == "" {
-		model = p.config.DefaultModel
-	}
-
-	gemReq := BuildRequest(req)
-	countReq := &CountTokensRequest{Contents: gemReq.Contents}
-
-	body, err := json.Marshal(countReq)
+	stream, err := chatModel.Stream(ctx, messages, opts...)
 	if err != nil {
-		return nil, fmt.Errorf("gemini: marshal countTokens request: %w", err)
+		return nil, provider.WrapEinoError(err)
 	}
-
-	modelID := strings.TrimPrefix(model, "models/")
-	url := fmt.Sprintf("%s/v1beta/models/%s:countTokens?key=%s",
-		p.config.BaseURL, modelID, p.config.APIKey)
-
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
-	if err != nil {
-		return nil, fmt.Errorf("gemini: build countTokens request: %w", err)
-	}
-	p.setHeaders(httpReq)
-
-	resp, err := p.client.Do(httpReq)
-	if err != nil {
-		return nil, fmt.Errorf("gemini: countTokens request failed: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if err := httputil.CheckResponse(resp); err != nil {
-		return nil, err
-	}
-
-	var countResp CountTokensResponse
-	if err := json.NewDecoder(resp.Body).Decode(&countResp); err != nil {
-		return nil, fmt.Errorf("gemini: decode countTokens response: %w", err)
-	}
-	return &provider.TokenCountResponse{InputTokens: countResp.TotalTokens}, nil
+	return stream, nil
 }
 
 // ListModels fetches available Gemini models from GET /v1beta/models.
@@ -212,13 +97,14 @@ func (p *geminiProvider) ListModels(ctx context.Context) ([]provider.ModelInfo, 
 	}
 	p.setHeaders(httpReq)
 
-	resp, err := p.client.Do(httpReq)
+	httpClient := provider.BuildHTTPClient(p.config, nil, nil)
+	resp, err := httpClient.Do(httpReq)
 	if err != nil {
 		return nil, fmt.Errorf("gemini: request failed: %w", err)
 	}
 	defer resp.Body.Close()
 
-	if err := httputil.CheckResponse(resp); err != nil {
+	if err := provider.CheckResponse(resp); err != nil {
 		return nil, err
 	}
 
@@ -253,6 +139,33 @@ func (p *geminiProvider) Capabilities() provider.ProviderCapabilities {
 		ContextWindow:   1000000,
 		MaxOutputTokens: 8192,
 	}
+}
+
+func (p *geminiProvider) newChatModel(ctx context.Context, req *provider.GenerateRequest) (einomodel.ToolCallingChatModel, []*schema.Message, []einomodel.Option, error) {
+	state, err := provider.ResolveChatRequest(ctx, p.config, req)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+
+	// Reuse the cached client for the common path (no credential override).
+	// Build a new one only when a per-request credential changes the API key or base URL.
+	client := p.genaiClient
+	if state.Credential != nil {
+		client, err = buildGenaiClient(ctx, state.APIKey, state.BaseURL, p.config.Network, state.Credential)
+		if err != nil {
+			return nil, nil, nil, fmt.Errorf("gemini: build credential client: %w", err)
+		}
+	}
+
+	cfg := &einogemini.Config{
+		Client: client,
+		Model:  state.ModelName,
+	}
+	chatModel, err := einogemini.NewChatModel(ctx, cfg)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	return chatModel, state.Messages, state.Options, nil
 }
 
 func (p *geminiProvider) setHeaders(req *http.Request) {

@@ -5,6 +5,9 @@ import (
 	"fmt"
 	"time"
 
+	einomodel "github.com/cloudwego/eino/components/model"
+	"github.com/cloudwego/eino/schema"
+
 	"github.com/agent-guide/caddy-llm/llm/memory"
 	"github.com/agent-guide/caddy-llm/llm/provider"
 )
@@ -25,8 +28,8 @@ func NewOrchestrator(p provider.Provider, mem memory.MemoryStore) *Orchestrator 
 type Request struct {
 	SessionID    string
 	AgentID      string
-	Messages     []provider.Message
-	Tools        []provider.Tool
+	Messages     []*schema.Message
+	Tools        []*schema.ToolInfo
 	Config       *Config
 	EnableMCP    bool
 	EnableMemory bool
@@ -42,7 +45,7 @@ type Config struct {
 // Response is the final agent-mode response.
 type Response struct {
 	SessionID string
-	Messages  []provider.Message
+	Messages  []*schema.Message
 	Usage     provider.Usage
 }
 
@@ -65,27 +68,25 @@ func (o *Orchestrator) Process(ctx context.Context, req *Request) (*Response, er
 
 	var totalUsage provider.Usage
 	for i := 0; i < cfg.MaxIterations; i++ {
+		var opts []einomodel.Option
+		if len(req.Tools) > 0 {
+			opts = append(opts, einomodel.WithTools(req.Tools))
+		}
 		genReq := &provider.GenerateRequest{
 			Messages: messages,
-			Tools:    req.Tools,
+			Options:  opts,
 		}
 
 		resp, err := o.provider.Generate(ctx, genReq)
 		if err != nil {
 			return nil, fmt.Errorf("agent: generate: %w", err)
 		}
-		totalUsage.InputTokens += resp.Usage.InputTokens
-		totalUsage.OutputTokens += resp.Usage.OutputTokens
+		usage := provider.UsageFromMessage(resp.Message)
+		totalUsage.InputTokens += usage.InputTokens
+		totalUsage.OutputTokens += usage.OutputTokens
 
 		// Check if model wants to use tools
-		hasToolUse := false
-		for _, block := range resp.Content {
-			if block.Type == "tool_use" {
-				hasToolUse = true
-				break
-			}
-		}
-
+		hasToolUse := resp.Message != nil && len(resp.Message.ToolCalls) > 0
 		if !hasToolUse || !req.AutoToolCall {
 			// Final response
 			return &Response{

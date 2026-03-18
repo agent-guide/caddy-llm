@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/agent-guide/caddy-llm/handler/llmapi/anthropic"
 	"github.com/agent-guide/caddy-llm/handler/llmapi/openai"
 	"github.com/agent-guide/caddy-llm/llm/auth/manager"
 	"github.com/agent-guide/caddy-llm/llm/provider"
@@ -14,13 +15,13 @@ import (
 type Router struct {
 	openai    http.Handler
 	anthropic http.Handler
-	gemini    http.Handler
 }
 
 // NewRouter creates a new LLM API router wired with the auth manager and provider.
 func NewRouter(authMgr *manager.Manager, prov provider.Provider) *Router {
 	return &Router{
-		openai: openai.NewHandler(authMgr, prov),
+		openai:    openai.NewHandler(authMgr, prov),
+		anthropic: anthropic.NewHandler(authMgr, prov),
 	}
 }
 
