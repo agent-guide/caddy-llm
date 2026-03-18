@@ -29,10 +29,10 @@ caddy-llm/
 │       ├── manager       - Credential lifecycle, refresh, selector
 │       └── authenticator - Provider-specific login flows (Codex, Claude, …)
 │
-└── handler  (directory) → module ID: "http.handlers.llm"
-    ├── llmapi    - LLM API compatibility layer
-    ├── admin     - Admin API
-    └── auth      - HTTP-level authentication & authorization (API key, RBAC)
+├── api/            → module ID: "http.handlers.llm_api"
+│   └── llmapi      - LLM API compatibility layer
+├── admin/          → module ID: "http.handlers.llm_admin"
+└── auth            - HTTP-level authentication & authorization (API key, RBAC)
 ```
 
 ---
@@ -48,11 +48,18 @@ caddy-llm/
                                     │
                                     ▼
 ┌─────────────────────────────────────────────────────────────────────┐
-│                     http.handlers.llm (handler/)                    │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────────────────┐  │
-│  │   llmapi     │  │    admin     │  │         auth             │  │
-│  │ (API Router) │  │ (Management) │  │  (Authentication)        │  │
-│  └──────────────┘  └──────────────┘  └──────────────────────────┘  │
+│                    http.handlers.llm_api (api/)                    │
+│  ┌──────────────┐  ┌──────────────┐                                 │
+│  │ llm_api.openai│ │llm_api.anthro│                                 │
+│  │  / anthropic  │ │    pic       │                                 │
+│  └──────────────┘ └──────────────┘                                 │
+└─────────────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────┐
+│                  http.handlers.llm_admin (admin/)                  │
+│  ┌──────────────┐  ┌──────────────────────────┐                    │
+│  │    admin     │  │         auth             │                    │
+│  │ (Management) │  │  (Authentication)        │                    │
+│  └──────────────┘  └──────────────────────────┘                    │
 └─────────────────────────────────────────────────────────────────────┘
                                     │
                                     ▼
@@ -649,9 +656,9 @@ type Manager struct {
 #### 4.1.1 Supported API Formats
 | API Format | Route Prefix | Module |
 |------------|--------------|--------|
-| OpenAI | `/v1/chat/completions` | `http.handlers.llm.openai` |
-| Anthropic | `/v1/messages` | `http.handlers.llm.anthropic` |
-| Gemini | `/v1/models/{model}:generateContent` | `http.handlers.llm.gemini` |
+| OpenAI | `/v1/chat/completions` | `http.handlers.llm_api.openai` |
+| Anthropic | `/v1/messages` | `http.handlers.llm_api.anthropic` |
+| Gemini | `/v1/models/{model}:generateContent` | `http.handlers.llm_api.gemini` |
 
 #### 4.1.2 Request Conversion Flow
 ```
@@ -953,22 +960,23 @@ caddy-llm/
 │           ├── codex.go             # CodexAuthenticator (OpenAI device-code flow) 🔧
 │           └── claude.go            # ClaudeAuthenticator (Anthropic PKCE browser flow) 🔧
 │
-├── handler/                         # HTTP Handler Module (ID: "http.handlers.llm")
-│   ├── module.go                    # Module registration ✅
-│   ├── handler.go                   # Handler + Caddy provisioning 🔧
+├── api/
+│   ├── handler.go                   # LLM API handler (ID: "http.handlers.llm_api") ✅
 │   │
 │   ├── llmapi/                      # LLM API compatibility layer
-│   │   ├── router.go                # Routes /v1/messages → anthropic, /v1/chat → openai 🔧
+│   │   ├── api.go                   # LLMApiHandler interface ✅
+│   │   ├── router.go                # Dispatches to configured llm_api modules 🔧
 │   │   ├── openai/
-│   │   │   ├── handler.go           # OpenAI handler (501 stub) 🔧
+│   │   │   ├── handler.go           # OpenAI llm_api module 🔧
 │   │   │   └── converter.go         # OpenAI ↔ internal converter 🔧
 │   │   ├── anthropic/
-│   │   │   ├── handler.go           # Anthropic handler (501 stub) 🔧
+│   │   │   ├── handler.go           # Anthropic llm_api module 🔧
 │   │   │   └── converter.go         # Anthropic ↔ internal converter 🔧
 │   │   # Planned: llmapi/gemini/ 📋
-│   │
-│   ├── admin/                       # Admin API submodule
-│   │   ├── handler.go               # Admin handler (501 stub) 🔧
+│
+├── admin/
+│   ├── module.go                    # Admin handler (ID: "http.handlers.llm_admin") ✅
+│   ├── handler.go                   # Admin handler implementation (501 stub) 🔧
 │   │   └── routes.go                # Route stubs 🔧
 │   │   # Planned: provider_api.go, mcp_api.go, memory_api.go,
 │   │   #          agent_api.go, monitor_api.go 📋
@@ -1021,7 +1029,7 @@ caddy-llm/
 ## 8. Implementation Roadmap
 
 ### Phase 1: Core Infrastructure ✅ Done
-- [x] Project restructure (Caddy modules: `llm` app + `http.handlers.llm` handler)
+- [x] Project restructure (Caddy modules: `llm` app + `http.handlers.llm_api` handler)
 - [x] Core interface definitions (`Provider`, `EmbeddingProvider`, `StatusError`)
 - [x] Provider registry (thread-safe, `init()`-based registration)
 - [x] Current providers implemented: OpenAI, Anthropic, Gemini, Ollama, OpenRouter

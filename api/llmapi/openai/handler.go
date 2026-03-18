@@ -6,11 +6,14 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/agent-guide/caddy-llm/llm/auth/manager"
 	"github.com/agent-guide/caddy-llm/llm/provider"
+	"github.com/caddyserver/caddy/v2"
 	"github.com/cloudwego/eino/schema"
+	"go.uber.org/zap"
 )
 
 // Handler handles OpenAI-format API requests (/v1/chat/completions, etc.).
@@ -19,28 +22,62 @@ type Handler struct {
 	prov        provider.Provider
 }
 
+func init() {
+	caddy.RegisterModule(Handler{})
+}
+
+// CaddyModule returns the Caddy module information.
+func (Handler) CaddyModule() caddy.ModuleInfo {
+	return caddy.ModuleInfo{
+		ID:  "http.handlers.llm_api.openai",
+		New: func() caddy.Module { return new(Handler) },
+	}
+}
+
 // NewHandler creates a Handler with the given auth manager and provider.
 func NewHandler(authMgr *manager.Manager, prov provider.Provider) *Handler {
 	return &Handler{authManager: authMgr, prov: prov}
 }
 
+// ProvisionLLMApi injects shared gateway dependencies.
+func (h *Handler) ProvisionLLMApi(authMgr *manager.Manager, prov provider.Provider, _ *zap.Logger) error {
+	h.authManager = authMgr
+	h.prov = prov
+	return nil
+}
+
+// Name returns the handler name.
+func (h *Handler) Name() string { return "openai" }
+
+// MatchLLMApi returns true when the request targets the OpenAI-compatible surface.
+func (h *Handler) MatchLLMApi(r *http.Request) bool {
+	return strings.HasPrefix(r.URL.Path, "/v1/chat/completions") ||
+		strings.HasPrefix(r.URL.Path, "/v1/models") ||
+		strings.HasPrefix(r.URL.Path, "/v1/embeddings")
+}
+
 // ServeHTTP handles OpenAI API requests.
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	_ = h.ServeLLMApi(w, r)
+}
+
+// ServeLLMApi handles OpenAI-compatible API requests.
+func (h *Handler) ServeLLMApi(w http.ResponseWriter, r *http.Request) error {
 	if r.Method != http.MethodPost {
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
-		return
+		return nil
 	}
 
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "failed to read request body")
-		return
+		return nil
 	}
 
 	var req ChatCompletionRequest
 	if err := json.Unmarshal(body, &req); err != nil {
 		writeError(w, http.StatusBadRequest, fmt.Sprintf("invalid request: %s", err))
-		return
+		return nil
 	}
 
 	conv := &Converter{}
@@ -54,15 +91,16 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	if req.Stream {
 		h.serveStream(w, ctx, genReq)
-		return
+		return nil
 	}
 
 	resp, err := h.prov.Generate(ctx, genReq)
 	if err != nil {
 		writeError(w, http.StatusBadGateway, err.Error())
-		return
+		return nil
 	}
 	writeJSON(w, http.StatusOK, conv.FromInternal(resp, genReq.Model))
+	return nil
 }
 
 func (h *Handler) serveStream(w http.ResponseWriter, ctx context.Context, genReq *provider.GenerateRequest) {

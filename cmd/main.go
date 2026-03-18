@@ -7,7 +7,10 @@ import (
 	_ "github.com/caddyserver/caddy/v2/modules/standard"
 
 	// LLM Gateway modules
-	_ "github.com/agent-guide/caddy-llm/handler"
+	_ "github.com/agent-guide/caddy-llm/admin"
+	_ "github.com/agent-guide/caddy-llm/api"
+	_ "github.com/agent-guide/caddy-llm/api/llmapi/anthropic"
+	_ "github.com/agent-guide/caddy-llm/api/llmapi/openai"
 	_ "github.com/agent-guide/caddy-llm/llm"
 
 	// LLM Providers (register via init())

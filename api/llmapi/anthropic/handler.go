@@ -11,7 +11,9 @@ import (
 
 	"github.com/agent-guide/caddy-llm/llm/auth/manager"
 	"github.com/agent-guide/caddy-llm/llm/provider"
+	"github.com/caddyserver/caddy/v2"
 	"github.com/cloudwego/eino/schema"
+	"go.uber.org/zap"
 )
 
 // Handler handles Anthropic-format API requests (/v1/messages).
@@ -20,22 +22,55 @@ type Handler struct {
 	prov        provider.Provider
 }
 
+func init() {
+	caddy.RegisterModule(Handler{})
+}
+
+// CaddyModule returns the Caddy module information.
+func (Handler) CaddyModule() caddy.ModuleInfo {
+	return caddy.ModuleInfo{
+		ID:  "http.handlers.llm_api.anthropic",
+		New: func() caddy.Module { return new(Handler) },
+	}
+}
+
 // NewHandler creates a Handler wired with the given auth manager and provider.
 func NewHandler(authMgr *manager.Manager, prov provider.Provider) *Handler {
 	return &Handler{authManager: authMgr, prov: prov}
 }
 
+// ProvisionLLMApi injects shared gateway dependencies.
+func (h *Handler) ProvisionLLMApi(authMgr *manager.Manager, prov provider.Provider, _ *zap.Logger) error {
+	h.authManager = authMgr
+	h.prov = prov
+	return nil
+}
+
+// Name returns the handler name.
+func (h *Handler) Name() string { return "anthropic" }
+
+// MatchLLMApi returns true when the request targets the Anthropic-compatible surface.
+func (h *Handler) MatchLLMApi(r *http.Request) bool {
+	return strings.HasPrefix(r.URL.Path, "/v1/messages")
+}
+
 // ServeHTTP handles /v1/messages and /v1/messages/count_tokens.
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	_ = h.ServeLLMApi(w, r)
+}
+
+// ServeLLMApi handles Anthropic-compatible API requests.
+func (h *Handler) ServeLLMApi(w http.ResponseWriter, r *http.Request) error {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
+		return nil
 	}
 	if strings.HasSuffix(r.URL.Path, "/count_tokens") {
 		h.handleCountTokens(w, r)
-		return
+		return nil
 	}
 	h.handleMessages(w, r)
+	return nil
 }
 
 func (h *Handler) handleMessages(w http.ResponseWriter, r *http.Request) {

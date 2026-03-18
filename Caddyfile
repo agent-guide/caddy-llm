@@ -1,5 +1,8 @@
 # Caddy LLM AI Gateway
-# HTTP handler module ID: "http.handlers.llm"  (Caddyfile directive: "llm")
+# Caddy App module ID: "llm"
+# HTTP handler module IDs:
+# - "http.handlers.llm_api" (Caddyfile directive: "handle_llm_api")
+# - "http.handlers.llm_admin" (Caddyfile directive: "handle_llm_admin")
 
 {
 	admin localhost:2019
@@ -11,19 +14,16 @@ localhost:8082 {
 		format console
 	}
 
-	# LLM API routes (OpenAI/Anthropic/Gemini compatible)
+	# LLM API routes
 	route /v1/* {
-		llm {
-			default_provider openai
-			config_dsn {$LLM_CONFIG_DSN:llm_gateway.db}
+		handle_llm_api {
+			llm_api openai
+			llm_api anthropic
 		}
 	}
 
-	# Admin API routes
+	# Admin routes
 	route /admin/* {
-		llm {
-			default_provider openai
-			config_dsn {$LLM_CONFIG_DSN:llm_gateway.db}
-		}
+		handle_llm_admin
 	}
 }
