@@ -5,18 +5,20 @@ import (
 	"net/http"
 
 	"github.com/agent-guide/caddy-llm/llm/auth/manager"
+	"github.com/agent-guide/caddy-llm/llm/configstore/intf"
 )
 
 // Handler handles Admin API requests under /admin/.
 type Handler struct {
 	authManager *manager.Manager
+	configStore intf.ConfigStorer
 	mux         *http.ServeMux
 	// mcp    mcp.Manager     // TODO: wire in
 }
 
 // NewHandler constructs an admin Handler with the given auth manager.
-func NewHandler(authMgr *manager.Manager) *Handler {
-	h := &Handler{authManager: authMgr}
+func NewHandler(authMgr *manager.Manager, configStore intf.ConfigStorer) *Handler {
+	h := &Handler{authManager: authMgr, configStore: configStore}
 	h.mux = http.NewServeMux()
 	for _, route := range h.Routes() {
 		h.mux.HandleFunc(route.Method+" "+route.Path, route.Handler)
@@ -39,4 +41,9 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 // writeError writes a JSON error response.
 func writeError(w http.ResponseWriter, status int, msg string) {
 	writeJSON(w, status, map[string]string{"error": msg})
+}
+
+func decodeJSON(r *http.Request, dest any) error {
+	defer r.Body.Close()
+	return json.NewDecoder(r.Body).Decode(dest)
 }

@@ -2,12 +2,16 @@ package llm
 
 import (
 	"fmt"
+	"path/filepath"
 
 	"github.com/caddyserver/caddy/v2"
 	"go.uber.org/zap"
 
 	"github.com/agent-guide/caddy-llm/llm/auth/authenticator"
 	"github.com/agent-guide/caddy-llm/llm/auth/manager"
+	"github.com/agent-guide/caddy-llm/llm/configstore"
+	configstoreIntf "github.com/agent-guide/caddy-llm/llm/configstore/intf"
+	configstoresqlite "github.com/agent-guide/caddy-llm/llm/configstore/sqlite"
 )
 
 func init() {
@@ -19,9 +23,17 @@ func init() {
 type App struct {
 	// Providers lists the configured LLM providers.
 	Providers []caddy.ModuleMap `json:"providers,omitempty" caddy:"namespace=llm.providers"`
+	// ConfigStore configures persistent admin/auth state storage.
+	ConfigStoreCfg *ConfigStoreConfig `json:"config_store,omitempty"`
 
-	logger      *zap.Logger
-	authManager *manager.Manager
+	logger       *zap.Logger
+	authManager  *manager.Manager
+	configStorer configstoreIntf.ConfigStorer
+}
+
+type ConfigStoreConfig struct {
+	Type   string                                     `json:"type,omitempty"`
+	SQLite *configstoresqlite.SQLiteConfigStoreConfig `json:"sqlite,omitempty"`
 }
 
 // CaddyModule returns the Caddy module information.
@@ -36,9 +48,22 @@ func (App) CaddyModule() caddy.ModuleInfo {
 func (a *App) Provision(ctx caddy.Context) error {
 	a.logger = ctx.Logger(a)
 
-	// Initialize auth manager (no persistent store for now).
+	storeCfg := a.effectiveConfigStoreConfig()
+	storer, err := configstore.CreateConfigStore(ctx, a.logger, storeCfg.Type, storeCfg.sqliteConfig())
+	if err != nil {
+		return fmt.Errorf("init config store: %w", err)
+	}
+	a.configStorer = storer
+
 	a.authManager = manager.NewManager(nil, nil, nil)
+	if a.configStorer != nil {
+		a.authManager.SetStore(a.configStorer.GetCredentialStore())
+	}
 	a.authManager.RegisterAuthenticator(authenticator.NewCodexAuthenticator())
+	a.authManager.RegisterAuthenticator(authenticator.NewClaudeAuthenticator())
+	if err := a.authManager.Load(ctx); err != nil {
+		return fmt.Errorf("load credentials: %w", err)
+	}
 
 	a.logger.Info("LLM Gateway provisioned")
 	return nil
@@ -47,6 +72,10 @@ func (a *App) Provision(ctx caddy.Context) error {
 // AuthManager returns the credential manager shared across the gateway.
 func (a *App) AuthManager() *manager.Manager {
 	return a.authManager
+}
+
+func (a *App) ConfigStore() configstoreIntf.ConfigStorer {
+	return a.configStorer
 }
 
 // Validate validates the app configuration.
@@ -78,9 +107,41 @@ func GetApp(ctx caddy.Context) (*App, error) {
 	return app, nil
 }
 
+func (a *App) effectiveConfigStoreConfig() *ConfigStoreConfig {
+	if a.ConfigStoreCfg == nil {
+		return &ConfigStoreConfig{
+			Type: "sqlite",
+			SQLite: &configstoresqlite.SQLiteConfigStoreConfig{
+				SQLitePath: filepath.Join(caddy.AppDataDir(), "caddy-llm", "configstore.db"),
+			},
+		}
+	}
+
+	cfg := *a.ConfigStoreCfg
+	if cfg.Type == "" {
+		cfg.Type = "sqlite"
+	}
+	if cfg.Type == "sqlite" {
+		if cfg.SQLite == nil {
+			cfg.SQLite = &configstoresqlite.SQLiteConfigStoreConfig{}
+		}
+		if cfg.SQLite.SQLitePath == "" {
+			cfg.SQLite.SQLitePath = filepath.Join(caddy.AppDataDir(), "caddy-llm", "configstore.db")
+		}
+	}
+	return &cfg
+}
+
+func (c *ConfigStoreConfig) sqliteConfig() configstoresqlite.SQLiteConfigStoreConfig {
+	if c != nil && c.SQLite != nil {
+		return *c.SQLite
+	}
+	return configstoresqlite.SQLiteConfigStoreConfig{}
+}
+
 // Interface guards
 var (
-	_ caddy.App        = (*App)(nil)
+	_ caddy.App         = (*App)(nil)
 	_ caddy.Provisioner = (*App)(nil)
-	_ caddy.Validator  = (*App)(nil)
+	_ caddy.Validator   = (*App)(nil)
 )

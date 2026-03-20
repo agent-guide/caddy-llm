@@ -36,7 +36,7 @@ func (h *LLMAdminHandler) Provision(ctx caddy.Context) error {
 	if err != nil {
 		return fmt.Errorf("handle_llm_admin: get llm app: %w", err)
 	}
-	h.handler = NewHandler(app.AuthManager())
+	h.handler = NewHandler(app.AuthManager(), app.ConfigStore())
 	return nil
 }
 

@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/agent-guide/caddy-llm/llm/auth/credential"
-	"github.com/agent-guide/caddy-llm/llm/store/intf"
+	"github.com/agent-guide/caddy-llm/llm/configstore/intf"
 	"github.com/google/uuid"
 )
 
@@ -190,11 +190,15 @@ func (m *Manager) Load(ctx context.Context) error {
 	if m.store == nil {
 		return nil
 	}
-	creds, err := m.store.List(ctx)
+	items, err := m.store.ListByTag(ctx, "")
 	if err != nil {
 		return fmt.Errorf("manager: load from store: %w", err)
 	}
-	for _, cred := range creds {
+	for _, item := range items {
+		cred, ok := item.(*credential.Credential)
+		if !ok || cred == nil {
+			return fmt.Errorf("manager: load from store: unexpected credential type %T", item)
+		}
 		if err := m.Register(WithSkipPersist(ctx), cred); err != nil {
 			return fmt.Errorf("manager: register credential %s: %w", cred.ID, err)
 		}
@@ -658,7 +662,7 @@ func (m *Manager) persist(ctx context.Context, cred *credential.Credential) erro
 	if m.store == nil {
 		return nil
 	}
-	if _, err := m.store.Save(ctx, cred); err != nil {
+	if _, err := m.store.Save(ctx, cred.ID, cred.Provider, cred); err != nil {
 		return fmt.Errorf("manager: persist credential %s: %w", cred.ID, err)
 	}
 	return nil
