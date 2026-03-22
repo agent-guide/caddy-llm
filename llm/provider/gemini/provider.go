@@ -13,7 +13,7 @@ import (
 	"github.com/cloudwego/eino/schema"
 	"google.golang.org/genai"
 
-	"github.com/agent-guide/caddy-llm/llm/auth/credential"
+	"github.com/agent-guide/caddy-llm/llm/authmanager/credential"
 	"github.com/agent-guide/caddy-llm/llm/provider"
 )
 

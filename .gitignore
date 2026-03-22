@@ -11,6 +11,10 @@
 # Test binary, built with `go test -c`
 *.test
 
+# Markdown docs
+CLAUDE.md
+REQUIREMENT.md
+
 # Code coverage profiles and other test artifacts
 *.out
 coverage.*

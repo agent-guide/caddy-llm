@@ -20,28 +20,28 @@ import (
 	"sync"
 	"time"
 
-	"github.com/agent-guide/caddy-llm/llm/auth/credential"
+	"github.com/agent-guide/caddy-llm/llm/authmanager/credential"
 	"github.com/google/uuid"
 )
 
 // OAuth constants for OpenAI Codex CLI authentication.
 const (
-	codexAuthURL    = "https://auth.openai.com/oauth/authorize"
-	codexTokenURL   = "https://auth.openai.com/oauth/token"
-	codexClientID   = "app_EMoamEEZ73f0CkXaXp7hrann"
+	codexAuthURL     = "https://auth.openai.com/oauth/authorize"
+	codexTokenURL    = "https://auth.openai.com/oauth/token"
+	codexClientID    = "app_EMoamEEZ73f0CkXaXp7hrann"
 	codexRedirectURI = "http://localhost:1455/auth/callback"
 
 	// Device flow endpoints.
-	codexDeviceUserCodeURL    = "https://auth.openai.com/api/accounts/deviceauth/usercode"
-	codexDeviceTokenURL       = "https://auth.openai.com/api/accounts/deviceauth/token"
+	codexDeviceUserCodeURL     = "https://auth.openai.com/api/accounts/deviceauth/usercode"
+	codexDeviceTokenURL        = "https://auth.openai.com/api/accounts/deviceauth/token"
 	codexDeviceVerificationURL = "https://auth.openai.com/codex/device"
-	codexDeviceRedirectURI    = "https://auth.openai.com/deviceauth/callback"
+	codexDeviceRedirectURI     = "https://auth.openai.com/deviceauth/callback"
 
-	codexCallbackTimeout      = 5 * time.Minute
-	codexDeviceTimeout        = 15 * time.Minute
-	codexDefaultCallbackPort  = 1455
-	codexDefaultPollInterval  = 5 * time.Second
-	codexRefreshMaxRetries    = 3
+	codexCallbackTimeout     = 5 * time.Minute
+	codexDeviceTimeout       = 15 * time.Minute
+	codexDefaultCallbackPort = 1455
+	codexDefaultPollInterval = 5 * time.Second
+	codexRefreshMaxRetries   = 3
 )
 
 // ---- Internal HTTP response types ----
@@ -79,9 +79,9 @@ type codexDeviceTokenResp struct {
 // ---- JWT claim types ----
 
 type codexJWTClaims struct {
-	Email         string         `json:"email"`
-	Exp           int64          `json:"exp"`
-	CodexAuthInfo codexAuthInfo  `json:"https://api.openai.com/auth"`
+	Email         string        `json:"email"`
+	Exp           int64         `json:"exp"`
+	CodexAuthInfo codexAuthInfo `json:"https://api.openai.com/auth"`
 }
 
 type codexAuthInfo struct {
@@ -361,10 +361,10 @@ func (a *CodexAuthenticator) refreshTokensWithRetry(ctx context.Context, refresh
 
 func (a *CodexAuthenticator) buildCredential(tokenResp *codexTokenResponse) (*credential.Credential, error) {
 	cred := &credential.Credential{
-		ID:       uuid.New().String(),
-		Provider: a.Provider(),
-		Status:   credential.StatusActive,
-		Metadata: make(map[string]any),
+		ID:         uuid.New().String(),
+		Provider:   a.Provider(),
+		Status:     credential.StatusActive,
+		Metadata:   make(map[string]any),
 		Attributes: make(map[string]string),
 	}
 
@@ -490,11 +490,11 @@ type oauthCallbackResult struct {
 }
 
 type oauthCallbackServer struct {
-	port       int
-	srv        *http.Server
-	resultCh   chan oauthCallbackResult
-	mu         sync.Mutex
-	running    bool
+	port     int
+	srv      *http.Server
+	resultCh chan oauthCallbackResult
+	mu       sync.Mutex
+	running  bool
 }
 
 func newOAuthCallbackServer(port int) *oauthCallbackServer {

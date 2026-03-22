@@ -3,7 +3,7 @@ package manager
 import (
 	"context"
 
-	"github.com/agent-guide/caddy-llm/llm/auth/credential"
+	"github.com/agent-guide/caddy-llm/llm/authmanager/credential"
 )
 
 // Authenticator handles the CLI login flow for a specific provider.

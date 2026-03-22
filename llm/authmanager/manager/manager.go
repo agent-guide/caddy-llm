@@ -8,7 +8,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/agent-guide/caddy-llm/llm/auth/credential"
+	"github.com/agent-guide/caddy-llm/llm/authmanager/authenticator"
+	"github.com/agent-guide/caddy-llm/llm/authmanager/credential"
 	"github.com/agent-guide/caddy-llm/llm/configstore/intf"
 	"github.com/google/uuid"
 )
@@ -80,7 +81,7 @@ type Manager struct {
 
 	mu              sync.RWMutex
 	creds           map[string]*credential.Credential // credID -> Credential
-	authenticators  map[string]Authenticator          // providerKey -> Authenticator
+	authenticators  map[string]Authenticator          // cli/provider key -> Authenticator
 	refresher       Refresher                         // fallback global refresher
 	scheduler       *authScheduler
 	providerOffsets map[string]int
@@ -115,38 +116,38 @@ func NewManager(store intf.CredentialStorer, selector Selector, hook Hook) *Mana
 		refreshSemaphore: make(chan struct{}, defaultRefreshMaxConcurrent),
 	}
 	m.scheduler = newAuthScheduler(selector)
+	m.RegisterAuthenticator("codex", authenticator.NewCodexAuthenticator())
+	m.RegisterAuthenticator("claude", authenticator.NewClaudeAuthenticator())
 	return m
 }
 
-// RegisterAuthenticator registers an Authenticator for its provider.
-// Replaces any previously registered authenticator for the same provider.
-func (m *Manager) RegisterAuthenticator(auth Authenticator) {
+// RegisterAuthenticator registers an Authenticator for a CLI name.
+// It also indexes the same Authenticator by its provider name so refresh lookups
+// can continue resolving via credential.Provider.
+func (m *Manager) RegisterAuthenticator(cliname string, auth Authenticator) {
 	if auth == nil {
 		return
 	}
-	key := strings.ToLower(strings.TrimSpace(auth.Provider()))
-	if key == "" {
+	cliKey := strings.ToLower(strings.TrimSpace(cliname))
+	if cliKey == "" {
 		return
 	}
+	providerKey := strings.ToLower(strings.TrimSpace(auth.Provider()))
 	m.mu.Lock()
-	m.authenticators[key] = auth
+	m.authenticators[cliKey] = auth
+	if providerKey != "" {
+		m.authenticators[providerKey] = auth
+	}
 	m.mu.Unlock()
 }
 
-// GetAuthenticator returns the Authenticator registered for the given provider, if any.
-func (m *Manager) GetAuthenticator(provider string) (Authenticator, bool) {
-	key := strings.ToLower(strings.TrimSpace(provider))
+// GetAuthenticator returns the Authenticator registered for the given CLI name.
+func (m *Manager) GetAuthenticator(cliname string) (Authenticator, bool) {
+	key := strings.ToLower(strings.TrimSpace(cliname))
 	m.mu.RLock()
 	auth, ok := m.authenticators[key]
 	m.mu.RUnlock()
 	return auth, ok
-}
-
-// SetStore swaps the underlying persistence store.
-func (m *Manager) SetStore(store intf.CredentialStorer) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.store = store
 }
 
 // SetSelector replaces the credential selection strategy.

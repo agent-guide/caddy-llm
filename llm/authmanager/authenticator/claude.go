@@ -13,17 +13,17 @@ import (
 	"sync"
 	"time"
 
-	"github.com/agent-guide/caddy-llm/llm/auth/credential"
+	"github.com/agent-guide/caddy-llm/llm/authmanager/credential"
 	"github.com/google/uuid"
 )
 
 // OAuth constants for Anthropic Claude CLI authentication.
 const (
-	claudeAuthURL      = "https://claude.ai/oauth/authorize"
-	claudeTokenURL     = "https://api.anthropic.com/v1/oauth/token"
-	claudeClientID     = "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
-	claudeRedirectURI  = "http://localhost:54545/callback"
-	claudeScopes       = "org:create_api_key user:profile user:inference"
+	claudeAuthURL     = "https://claude.ai/oauth/authorize"
+	claudeTokenURL    = "https://api.anthropic.com/v1/oauth/token"
+	claudeClientID    = "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
+	claudeRedirectURI = "http://localhost:54545/callback"
+	claudeScopes      = "org:create_api_key user:profile user:inference"
 
 	claudeCallbackTimeout     = 5 * time.Minute
 	claudeDefaultCallbackPort = 54545

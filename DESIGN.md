@@ -590,7 +590,7 @@ CREATE TABLE api_keys (
 
 ---
 
-### 3.6 Auth Submodule (`llm/auth/`)
+### 3.6 Auth Submodule (`llm/authmanager/`)
 
 The auth submodule provides CLI-level credential management — obtaining, storing, and refreshing API credentials from AI providers (e.g. simulating Codex or Claude desktop login flows). This is distinct from the HTTP-level auth in `handler/auth/`.
 
@@ -598,8 +598,8 @@ The auth submodule provides CLI-level credential management — obtaining, stori
 
 | Package | Responsibility |
 |---------|---------------|
-| `llm/auth/manager` | Credential lifecycle: storage, selection, refresh scheduling, quota tracking |
-| `llm/auth/authenticator` | Per-provider login flows (device code, PKCE browser-based OAuth, etc.) |
+| `llm/authmanager/manager` | Credential lifecycle: storage, selection, refresh scheduling, quota tracking |
+| `llm/authmanager/authenticator` | Per-provider login flows (device code, PKCE browser-based OAuth, etc.) |
 
 #### 3.6.2 Authenticator Interface
 ```go
@@ -751,7 +751,7 @@ func (h *AdminHandler) Routes() []Route {
 
 ### 4.3 Auth Submodule (`handler/auth/`)
 
-HTTP-level authentication and authorization. Validates incoming HTTP requests against stored API keys and enforces RBAC policies. This is distinct from `llm/auth/` which handles CLI credential acquisition.
+HTTP-level authentication and authorization. Validates incoming HTTP requests against stored API keys and enforces RBAC policies. This is distinct from `llm/authmanager/` which handles CLI credential acquisition.
 
 #### 4.3.1 Authentication
 ```go

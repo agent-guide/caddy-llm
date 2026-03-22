@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/agent-guide/caddy-llm/llm/auth/credential"
+	"github.com/agent-guide/caddy-llm/llm/authmanager/credential"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )

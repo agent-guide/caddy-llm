@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/agent-guide/caddy-llm/llm/auth/manager"
+	"github.com/agent-guide/caddy-llm/llm/authmanager/manager"
 	"github.com/agent-guide/caddy-llm/llm/provider"
 	"github.com/caddyserver/caddy/v2"
 	"github.com/cloudwego/eino/schema"

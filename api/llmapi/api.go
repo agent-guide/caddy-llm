@@ -6,7 +6,7 @@ import (
 	"github.com/caddyserver/caddy/v2"
 	"go.uber.org/zap"
 
-	"github.com/agent-guide/caddy-llm/llm/auth/manager"
+	"github.com/agent-guide/caddy-llm/llm/authmanager/manager"
 	"github.com/agent-guide/caddy-llm/llm/provider"
 )
 
