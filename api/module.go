@@ -45,17 +45,6 @@ func (h *LLMAPIHandler) Provision(ctx caddy.Context) error {
 		return fmt.Errorf("llm_api: get llm app: %w", err)
 	}
 
-	provConfig := provider.ProviderConfig{
-		Name:    "openai",
-		APIKey:  "placeholder",
-		BaseURL: "https://api.openai.com/v1",
-	}
-	provConfig.Network.Defaults()
-	prov, err := provider.NewProvider(provConfig)
-	if err != nil {
-		return fmt.Errorf("llm_api: create openai provider: %w", err)
-	}
-
 	apis := h.LLMAPIs
 	if len(apis) == 0 {
 		apis = []string{"openai"}
@@ -63,6 +52,17 @@ func (h *LLMAPIHandler) Provision(ctx caddy.Context) error {
 
 	handlers := make([]llmapi.LLMApiHandler, 0, len(apis))
 	for _, name := range apis {
+		// Create the correct provider type for each API format.
+		provConfig := provider.ProviderConfig{
+			Name:   name,
+			APIKey: "placeholder",
+		}
+		provConfig.Network.Defaults()
+		prov, err := provider.NewProvider(provConfig)
+		if err != nil {
+			return fmt.Errorf("handle_llm_api: create %s provider: %w", name, err)
+		}
+
 		moduleID := "http.handlers.llm_api." + name
 		info, err := caddy.GetModule(moduleID)
 		if err != nil {

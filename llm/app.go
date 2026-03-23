@@ -1,6 +1,7 @@
 package llm
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/caddyserver/caddy/v2"
@@ -76,12 +77,14 @@ func (a *App) Validate() error {
 
 // Start starts the app.
 func (a *App) Start() error {
+	a.authManager.StartRefreshLoop(context.Background())
 	a.logger.Info("LLM Gateway started")
 	return nil
 }
 
 // Stop stops the app.
 func (a *App) Stop() error {
+	a.authManager.StopRefreshLoop()
 	return nil
 }
 

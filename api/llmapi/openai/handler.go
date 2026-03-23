@@ -3,12 +3,14 @@ package openai
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"strings"
 	"time"
 
+	"github.com/agent-guide/caddy-llm/llm/authmanager/credential"
 	"github.com/agent-guide/caddy-llm/llm/authmanager/manager"
 	"github.com/agent-guide/caddy-llm/llm/provider"
 	"github.com/caddyserver/caddy/v2"
@@ -85,16 +87,19 @@ func (h *Handler) ServeLLMApi(w http.ResponseWriter, r *http.Request) error {
 
 	// Pick a credential and inject into context for per-request auth override.
 	ctx := r.Context()
-	if cred, err := h.authManager.Pick(ctx, "codex", genReq.Model, nil); err == nil && cred != nil {
-		ctx = provider.WithCredential(ctx, cred)
+	var cred *credential.Credential
+	if c, err := h.authManager.Pick(ctx, "openai", genReq.Model, nil); err == nil && c != nil {
+		cred = c
+		ctx = provider.WithCredential(ctx, c)
 	}
 
 	if req.Stream {
-		h.serveStream(w, ctx, genReq)
+		h.serveStream(w, ctx, genReq, cred)
 		return nil
 	}
 
 	resp, err := h.prov.Generate(ctx, genReq)
+	h.markResult(ctx, cred, genReq.Model, err)
 	if err != nil {
 		writeError(w, http.StatusBadGateway, err.Error())
 		return nil
@@ -103,8 +108,37 @@ func (h *Handler) ServeLLMApi(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
-func (h *Handler) serveStream(w http.ResponseWriter, ctx context.Context, genReq *provider.GenerateRequest) {
+// markResult feeds the outcome of a provider call back to the auth manager so
+// quota tracking and credential health are updated accordingly.
+func (h *Handler) markResult(ctx context.Context, cred *credential.Credential, model string, err error) {
+	if h.authManager == nil || cred == nil {
+		return
+	}
+	result := manager.Result{
+		CredentialID: cred.ID,
+		Provider:     cred.Provider,
+		Model:        model,
+		Success:      err == nil,
+	}
+	if err != nil {
+		var se provider.StatusError
+		httpStatus := http.StatusBadGateway
+		if errors.As(err, &se) {
+			httpStatus = se.StatusCode()
+		}
+		result.Error = &credential.Error{
+			Code:       http.StatusText(httpStatus),
+			Message:    err.Error(),
+			HTTPStatus: httpStatus,
+			Retryable:  httpStatus == http.StatusTooManyRequests || httpStatus >= 500,
+		}
+	}
+	h.authManager.MarkResult(ctx, result)
+}
+
+func (h *Handler) serveStream(w http.ResponseWriter, ctx context.Context, genReq *provider.GenerateRequest, cred *credential.Credential) {
 	stream, err := h.prov.Stream(ctx, genReq)
+	h.markResult(ctx, cred, genReq.Model, err)
 	if err != nil {
 		writeError(w, http.StatusBadGateway, err.Error())
 		return

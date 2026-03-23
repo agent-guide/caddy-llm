@@ -30,6 +30,7 @@ func (h *Handler) Routes() []Route {
 		{Method: http.MethodDelete, Path: "/admin/providers/{id}", Handler: h.handleDeleteProvider},
 		{Method: http.MethodGet, Path: "/admin/credentials", Handler: h.handleListCredentials},
 		{Method: http.MethodGet, Path: "/admin/credentials/{id}", Handler: h.handleGetCredential},
+		{Method: http.MethodDelete, Path: "/admin/credentials/{id}", Handler: h.handleDeleteCredential},
 
 		// MCP
 		{Method: http.MethodGet, Path: "/admin/mcp/clients", Handler: h.handleListMCPClients},
@@ -56,6 +57,7 @@ func (h *Handler) Routes() []Route {
 
 		// CLI Login
 		{Method: http.MethodPost, Path: "/admin/clilogin/{cliname}", Handler: h.handleCLILogin},
+		{Method: http.MethodGet, Path: "/admin/clilogin/{cliname}/status", Handler: h.handleCLILoginStatus},
 	}
 }
 
@@ -256,6 +258,20 @@ func (h *Handler) handleDeleteAgent(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) handleMetrics(w http.ResponseWriter, r *http.Request) {
 	writeError(w, http.StatusNotImplemented, "not implemented")
+}
+
+func (h *Handler) handleDeleteCredential(w http.ResponseWriter, r *http.Request) {
+	if h.authManager == nil {
+		writeError(w, http.StatusServiceUnavailable, "auth manager not configured")
+		return
+	}
+
+	id := r.PathValue("id")
+	if err := h.authManager.Deregister(r.Context(), id); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted", "id": id})
 }
 
 func (h *Handler) providerStore() intf.ProviderConfigStorer {

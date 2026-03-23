@@ -3,6 +3,9 @@ package admin
 import (
 	"encoding/json"
 	"net/http"
+	"sync"
+
+	"go.uber.org/zap"
 
 	"github.com/agent-guide/caddy-llm/llm/authmanager/manager"
 	"github.com/agent-guide/caddy-llm/llm/configstore/intf"
@@ -10,15 +13,20 @@ import (
 
 // Handler handles Admin API requests under /admin/.
 type Handler struct {
-	authManager *manager.Manager
-	configStore intf.ConfigStorer
-	mux         *http.ServeMux
-	// mcp    mcp.Manager     // TODO: wire in
+	authManager   *manager.Manager
+	configStore   intf.ConfigStorer
+	mux           *http.ServeMux
+	logger        *zap.Logger
+	loginSessions sync.Map // cliname -> *loginStatus
 }
 
 // NewHandler constructs an admin Handler with the given auth manager.
-func NewHandler(authMgr *manager.Manager, configStore intf.ConfigStorer) *Handler {
-	h := &Handler{authManager: authMgr, configStore: configStore}
+// logger may be nil (a no-op logger is used in that case).
+func NewHandler(authMgr *manager.Manager, configStore intf.ConfigStorer, logger *zap.Logger) *Handler {
+	if logger == nil {
+		logger = zap.NewNop()
+	}
+	h := &Handler{authManager: authMgr, configStore: configStore, logger: logger}
 	h.mux = http.NewServeMux()
 	for _, route := range h.Routes() {
 		h.mux.HandleFunc(route.Method+" "+route.Path, route.Handler)

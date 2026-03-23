@@ -2,6 +2,7 @@ package admin
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -44,7 +45,7 @@ func TestCLILoginResolvesAuthenticatorAndRegistersCredential(t *testing.T) {
 		},
 	})
 
-	handler := NewHandler(authMgr, nil)
+	handler := NewHandler(authMgr, nil, nil)
 	req := httptest.NewRequest(http.MethodPost, "/admin/clilogin/codex", nil)
 	rec := httptest.NewRecorder()
 
@@ -69,7 +70,7 @@ func TestCLILoginResolvesAuthenticatorAndRegistersCredential(t *testing.T) {
 }
 
 func TestCLILoginReturnsNotFoundForUnknownCliname(t *testing.T) {
-	handler := NewHandler(manager.NewManager(nil, nil, nil), nil)
+	handler := NewHandler(manager.NewManager(nil, nil, nil), nil, nil)
 	req := httptest.NewRequest(http.MethodPost, "/admin/clilogin/unknown", nil)
 	rec := httptest.NewRecorder()
 
@@ -78,4 +79,55 @@ func TestCLILoginReturnsNotFoundForUnknownCliname(t *testing.T) {
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("unexpected status code: got %d want %d", rec.Code, http.StatusNotFound)
 	}
+}
+
+func TestCLILoginStatusReportsCompletion(t *testing.T) {
+	authMgr := manager.NewManager(nil, nil, nil)
+	authMgr.RegisterAuthenticator("codex", &testAuthenticator{
+		provider: "openai",
+		loginFn: func(context.Context) (*credential.Credential, error) {
+			time.Sleep(20 * time.Millisecond)
+			return &credential.Credential{
+				ID:       "cred-openai-2",
+				Provider: "openai",
+			}, nil
+		},
+	})
+
+	handler := NewHandler(authMgr, nil, nil)
+
+	startReq := httptest.NewRequest(http.MethodPost, "/admin/clilogin/codex", nil)
+	startRec := httptest.NewRecorder()
+	handler.ServeHTTP(startRec, startReq)
+	if startRec.Code != http.StatusAccepted {
+		t.Fatalf("unexpected start status: got %d want %d", startRec.Code, http.StatusAccepted)
+	}
+
+	deadline := time.Now().Add(500 * time.Millisecond)
+	for time.Now().Before(deadline) {
+		statusReq := httptest.NewRequest(http.MethodGet, "/admin/clilogin/codex/status", nil)
+		statusRec := httptest.NewRecorder()
+		handler.ServeHTTP(statusRec, statusReq)
+		if statusRec.Code != http.StatusOK {
+			t.Fatalf("unexpected status code: got %d want %d", statusRec.Code, http.StatusOK)
+		}
+
+		var status loginStatus
+		if err := json.NewDecoder(statusRec.Body).Decode(&status); err != nil {
+			t.Fatalf("decode status response: %v", err)
+		}
+		if status.Status == "succeeded" {
+			if status.CredentialID != "cred-openai-2" {
+				t.Fatalf("unexpected credential id: got %q want %q", status.CredentialID, "cred-openai-2")
+			}
+			if status.FinishedAt == nil {
+				t.Fatal("expected finished_at to be set")
+			}
+			return
+		}
+
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	t.Fatal("login status did not reach succeeded")
 }
