@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"path/filepath"
 
-	"github.com/agent-guide/caddy-llm/llm/authmanager/authenticator"
 	"github.com/caddyserver/caddy/v2"
 	"go.uber.org/zap"
 
@@ -142,7 +141,6 @@ func (c *ConfigStoreConfig) sqliteConfig() configstoresqlite.SQLiteConfigStoreCo
 
 func (a *App) provisionAuthenticators(ctx caddy.Context) error {
 	if len(a.AuthenticatorsRaw) == 0 {
-		a.registerDefaultAuthenticators()
 		return nil
 	}
 
@@ -156,11 +154,6 @@ func (a *App) provisionAuthenticators(ctx caddy.Context) error {
 		return fmt.Errorf("unexpected authenticator module type %T", modules)
 	}
 	return a.registerLoadedAuthenticators(loaded)
-}
-
-func (a *App) registerDefaultAuthenticators() {
-	a.authManager.RegisterAuthenticator("codex", authenticator.NewCodexAuthenticator())
-	a.authManager.RegisterAuthenticator("claude", authenticator.NewClaudeAuthenticator())
 }
 
 func (a *App) registerLoadedAuthenticators(loaded map[string]any) error {

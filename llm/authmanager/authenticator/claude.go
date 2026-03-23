@@ -9,12 +9,14 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/agent-guide/caddy-llm/llm/authmanager/credential"
 	"github.com/caddyserver/caddy/v2"
+	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 	"github.com/google/uuid"
 )
 
@@ -81,6 +83,37 @@ func NewClaudeAuthenticator() *ClaudeAuthenticator {
 func (a *ClaudeAuthenticator) Provision(caddy.Context) error {
 	if a.CallbackPort <= 0 {
 		a.CallbackPort = claudeDefaultCallbackPort
+	}
+	return nil
+}
+
+// UnmarshalCaddyfile configures the authenticator from Caddyfile tokens.
+func (a *ClaudeAuthenticator) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
+	for d.Next() {
+		for d.NextBlock(0) {
+			switch d.Val() {
+			case "callback_port":
+				if !d.NextArg() {
+					return d.ArgErr()
+				}
+				port, err := strconv.Atoi(d.Val())
+				if err != nil {
+					return d.Errf("invalid callback_port: %v", err)
+				}
+				a.CallbackPort = port
+			case "no_browser":
+				if !d.NextArg() {
+					return d.ArgErr()
+				}
+				val, err := strconv.ParseBool(d.Val())
+				if err != nil {
+					return d.Errf("invalid no_browser: %v", err)
+				}
+				a.NoBrowser = val
+			default:
+				return d.Errf("unknown subdirective: %s", d.Val())
+			}
+		}
 	}
 	return nil
 }

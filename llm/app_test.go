@@ -5,18 +5,21 @@ import (
 
 	"github.com/agent-guide/caddy-llm/llm/authmanager/authenticator"
 	"github.com/agent-guide/caddy-llm/llm/authmanager/manager"
+	"github.com/caddyserver/caddy/v2"
 )
 
-func TestRegisterDefaultAuthenticators(t *testing.T) {
+func TestProvisionAuthenticatorsWithEmptyConfig(t *testing.T) {
 	app := &App{authManager: manager.NewManager(nil, nil, nil)}
 
-	app.registerDefaultAuthenticators()
-
-	if _, ok := app.authManager.GetAuthenticator("codex"); !ok {
-		t.Fatal("expected default codex authenticator to be registered")
+	if err := app.provisionAuthenticators(caddy.Context{}); err != nil {
+		t.Fatalf("provisionAuthenticators() error = %v", err)
 	}
-	if _, ok := app.authManager.GetAuthenticator("claude"); !ok {
-		t.Fatal("expected default claude authenticator to be registered")
+
+	if _, ok := app.authManager.GetAuthenticator("codex"); ok {
+		t.Fatal("expected codex authenticator to remain disabled without configuration")
+	}
+	if _, ok := app.authManager.GetAuthenticator("claude"); ok {
+		t.Fatal("expected claude authenticator to remain disabled without configuration")
 	}
 }
 
