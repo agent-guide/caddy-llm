@@ -22,10 +22,15 @@ func init() {
 
 // LLMAPIHandler exposes one or more compatible LLM APIs under the HTTP app.
 type LLMAPIHandler struct {
-	LLMAPIs []string `json:"llm_apis,omitempty"`
+	Bindings []Binding `json:"bindings,omitempty"`
 
 	logger *zap.Logger
 	router *llmapi.Router
+}
+
+type Binding struct {
+	API      string `json:"api,omitempty"`
+	Provider string `json:"provider,omitempty"`
 }
 
 // CaddyModule returns the Caddy module information.
@@ -45,25 +50,30 @@ func (h *LLMAPIHandler) Provision(ctx caddy.Context) error {
 		return fmt.Errorf("llm_api: get llm app: %w", err)
 	}
 
-	apis := h.LLMAPIs
-	if len(apis) == 0 {
-		apis = []string{"openai"}
+	bindings := h.Bindings
+	if len(bindings) == 0 {
+		bindings = []Binding{{API: "openai", Provider: "openai"}}
 	}
 
-	handlers := make([]llmapi.LLMApiHandler, 0, len(apis))
-	for _, name := range apis {
-		// Create the correct provider type for each API format.
-		provConfig := provider.ProviderConfig{
-			Name:   name,
-			APIKey: "placeholder",
-		}
-		provConfig.Network.Defaults()
-		prov, err := provider.NewProvider(provConfig)
-		if err != nil {
-			return fmt.Errorf("handle_llm_api: create %s provider: %w", name, err)
+	handlers := make([]llmapi.LLMApiHandler, 0, len(bindings))
+	for _, binding := range bindings {
+		apiName := binding.API
+		providerName := binding.Provider
+		if providerName == "" {
+			providerName = apiName
 		}
 
-		moduleID := "http.handlers.llm_api." + name
+		prov, ok := app.Provider(providerName)
+		if !ok {
+			provConfig := provider.ProviderConfig{Name: providerName}
+			provConfig.Network.Defaults()
+			prov, err = provider.NewProvider(provConfig)
+			if err != nil {
+				return fmt.Errorf("handle_llm_api: provider %q not configured in llm app and cannot be created from registry: %w", providerName, err)
+			}
+		}
+
+		moduleID := "http.handlers.llm_api." + apiName
 		info, err := caddy.GetModule(moduleID)
 		if err != nil {
 			return fmt.Errorf("handle_llm_api: load %s: %w", moduleID, err)
@@ -85,15 +95,15 @@ func (h *LLMAPIHandler) Provision(ctx caddy.Context) error {
 
 // Validate validates the handler configuration.
 func (h *LLMAPIHandler) Validate() error {
-	seen := make(map[string]struct{}, len(h.LLMAPIs))
-	for _, name := range h.LLMAPIs {
-		if name == "" {
+	seen := make(map[string]struct{}, len(h.Bindings))
+	for _, binding := range h.Bindings {
+		if binding.API == "" {
 			return fmt.Errorf("llm_api cannot be empty")
 		}
-		if _, ok := seen[name]; ok {
-			return fmt.Errorf("duplicate llm_api: %s", name)
+		if _, ok := seen[binding.API]; ok {
+			return fmt.Errorf("duplicate llm_api: %s", binding.API)
 		}
-		seen[name] = struct{}{}
+		seen[binding.API] = struct{}{}
 	}
 	return nil
 }

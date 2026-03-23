@@ -11,6 +11,7 @@ import (
 	"github.com/agent-guide/caddy-llm/llm/authmanager/manager"
 	configstoreIntf "github.com/agent-guide/caddy-llm/llm/configstore/intf"
 	configstoresqlite "github.com/agent-guide/caddy-llm/llm/configstore/sqlite"
+	"github.com/agent-guide/caddy-llm/llm/provider"
 )
 
 func init() {
@@ -21,7 +22,7 @@ func init() {
 // It manages providers, MCP clients, memory stores, and configuration.
 type App struct {
 	// Providers lists the configured LLM providers.
-	Providers []caddy.ModuleMap `json:"providers,omitempty" caddy:"namespace=llm.providers"`
+	ProvidersRaw caddy.ModuleMap `json:"providers,omitempty" caddy:"namespace=llm.providers"`
 	// Authenticators configures CLI credential authenticators under the llm.authenticators namespace.
 	AuthenticatorsRaw caddy.ModuleMap `json:"authenticators,omitempty" caddy:"namespace=llm.authenticators"`
 	// ConfigStore configures persistent admin/auth state storage.
@@ -30,6 +31,7 @@ type App struct {
 	logger       *zap.Logger
 	authManager  *manager.Manager
 	configStorer configstoreIntf.ConfigStorer
+	providers    map[string]provider.Provider
 }
 
 // CaddyModule returns the Caddy module information.
@@ -50,6 +52,9 @@ func (a *App) Provision(ctx caddy.Context) error {
 	credentialStore := a.configStorer.GetCredentialStore()
 
 	a.authManager = manager.NewManager(credentialStore, nil, nil)
+	if err := a.provisionProviders(ctx); err != nil {
+		return fmt.Errorf("provision providers: %w", err)
+	}
 	if err := a.provisionAuthenticators(ctx); err != nil {
 		return fmt.Errorf("provision authenticators: %w", err)
 	}
@@ -68,6 +73,15 @@ func (a *App) AuthManager() *manager.Manager {
 
 func (a *App) ConfigStore() configstoreIntf.ConfigStorer {
 	return a.configStorer
+}
+
+// Provider returns a configured provider by name.
+func (a *App) Provider(name string) (provider.Provider, bool) {
+	if a.providers == nil {
+		return nil, false
+	}
+	prov, ok := a.providers[name]
+	return prov, ok
 }
 
 // Validate validates the app configuration.
@@ -148,6 +162,33 @@ func (a *App) provisionAuthenticators(ctx caddy.Context) error {
 		return fmt.Errorf("unexpected authenticator module type %T", modules)
 	}
 	return a.registerLoadedAuthenticators(loaded)
+}
+
+func (a *App) provisionProviders(ctx caddy.Context) error {
+	if len(a.ProvidersRaw) == 0 {
+		a.providers = map[string]provider.Provider{}
+		return nil
+	}
+
+	modules, err := ctx.LoadModule(a, "ProvidersRaw")
+	if err != nil {
+		return err
+	}
+
+	loaded, ok := modules.(map[string]any)
+	if !ok {
+		return fmt.Errorf("unexpected provider module type %T", modules)
+	}
+
+	a.providers = make(map[string]provider.Provider, len(loaded))
+	for name, mod := range loaded {
+		prov, ok := mod.(provider.Provider)
+		if !ok {
+			return fmt.Errorf("provider module %q does not implement provider.Provider", name)
+		}
+		a.providers[name] = prov
+	}
+	return nil
 }
 
 func (a *App) registerLoadedAuthenticators(loaded map[string]any) error {

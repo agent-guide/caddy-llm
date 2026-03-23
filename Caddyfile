@@ -6,6 +6,11 @@
 
 {
 	admin localhost:2019
+
+	llm {
+		provider openai
+		provider anthropic
+	}
 }
 
 localhost:8082 {
@@ -18,7 +23,7 @@ localhost:8082 {
 	route /v1/* {
 		handle_llm_api {
 			llm_api openai
-			llm_api anthropic
+			llm_api anthropic anthropic
 		}
 	}
 

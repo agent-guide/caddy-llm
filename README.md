@@ -39,7 +39,7 @@ The `handle_llm_api` HTTP handler routes incoming requests to compatible API mod
 
 ### Provider System
 
-Providers are registered behind a common interface, so model backends can be swapped or extended without changing the API layer. The current repository includes implementations for OpenAI, Anthropic, Gemini, Ollama, and OpenRouter, plus shared utilities for OpenAI-compatible behavior and HTTP client handling.
+Providers are exposed as Caddy modules under the `llm.providers.*` namespace, so model backends can be swapped or extended without changing the API layer. The current repository includes implementations for OpenAI, Anthropic, Gemini, Ollama, and OpenRouter, plus shared utilities for OpenAI-compatible behavior and HTTP client handling.
 
 ### Authentication and Credential Management
 
@@ -92,6 +92,14 @@ Authenticators are configuration-driven now: if you do not declare an `authentic
     admin localhost:2019
 
     llm {
+        provider openai {
+            default_model gpt-4.1
+        }
+
+        provider anthropic {
+            default_model claude-sonnet-4-20250514
+        }
+
         config_store sqlite {
             path /var/lib/caddy/caddy-llm/configstore.db
         }
@@ -112,7 +120,9 @@ localhost:8082 {
     route /v1/* {
         handle_llm_api {
             llm_api openai
-            llm_api anthropic
+            llm_api anthropic anthropic
+            # openai-compatible ingress backed by a different provider:
+            # llm_api openai openrouter
         }
     }
 
@@ -121,3 +131,5 @@ localhost:8082 {
     }
 }
 ```
+
+Custom providers can be added by shipping a Caddy module under `llm.providers.<name>` that implements the shared `provider.Provider` interface. Once the module is linked into the Caddy build, it can be mounted with `provider <name> { ... }` inside the global `llm` block and referenced from `handle_llm_api`.

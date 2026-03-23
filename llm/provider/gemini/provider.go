@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/caddyserver/caddy/v2"
+	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 	einogemini "github.com/cloudwego/eino-ext/components/model/gemini"
 	einomodel "github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
@@ -19,18 +21,16 @@ import (
 
 func init() {
 	provider.RegisterProvider("gemini", New)
+	caddy.RegisterModule(Provider{})
 }
 
-type geminiProvider struct {
-	config      provider.ProviderConfig
+type Provider struct {
+	provider.ProviderConfig
 	genaiClient *genai.Client // cached default client (no credential override)
 }
 
 // New creates a new Google Gemini provider.
 func New(config provider.ProviderConfig) (provider.Provider, error) {
-	if config.APIKey == "" {
-		return nil, fmt.Errorf("gemini: api_key is required")
-	}
 	if config.BaseURL == "" {
 		config.BaseURL = "https://generativelanguage.googleapis.com"
 	}
@@ -40,10 +40,37 @@ func New(config provider.ProviderConfig) (provider.Provider, error) {
 	if err != nil {
 		return nil, fmt.Errorf("gemini: init client: %w", err)
 	}
-	return &geminiProvider{
-		config:      config,
-		genaiClient: defaultClient,
+	return &Provider{
+		ProviderConfig: config,
+		genaiClient:    defaultClient,
 	}, nil
+}
+
+func (Provider) CaddyModule() caddy.ModuleInfo {
+	return caddy.ModuleInfo{
+		ID:  "llm.providers.gemini",
+		New: func() caddy.Module { return new(Provider) },
+	}
+}
+
+func (p *Provider) Provision(_ caddy.Context) error {
+	if err := provider.ValidateConfigName(&p.ProviderConfig, "gemini"); err != nil {
+		return err
+	}
+	built, err := New(p.ProviderConfig)
+	if err != nil {
+		return err
+	}
+	mod, ok := built.(*Provider)
+	if !ok {
+		return fmt.Errorf("gemini: unexpected provider type %T", built)
+	}
+	*p = *mod
+	return nil
+}
+
+func (p *Provider) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
+	return provider.UnmarshalCaddyfileConfig(d, &p.ProviderConfig)
 }
 
 // buildGenaiClient constructs a genai.Client with the given credentials and network config.
@@ -62,8 +89,8 @@ func buildGenaiClient(ctx context.Context, apiKey, baseURL string, network provi
 	})
 }
 
-func (p *geminiProvider) Generate(ctx context.Context, req *provider.GenerateRequest) (*provider.GenerateResponse, error) {
-	return provider.RetryGenerate(p.config.Network, func() (*provider.GenerateResponse, error) {
+func (p *Provider) Generate(ctx context.Context, req *provider.GenerateRequest) (*provider.GenerateResponse, error) {
+	return provider.RetryGenerate(p.ProviderConfig.Network, func() (*provider.GenerateResponse, error) {
 		chatModel, messages, opts, err := p.newChatModel(ctx, req)
 		if err != nil {
 			return nil, err
@@ -76,7 +103,7 @@ func (p *geminiProvider) Generate(ctx context.Context, req *provider.GenerateReq
 	})
 }
 
-func (p *geminiProvider) Stream(ctx context.Context, req *provider.GenerateRequest) (*schema.StreamReader[*schema.Message], error) {
+func (p *Provider) Stream(ctx context.Context, req *provider.GenerateRequest) (*schema.StreamReader[*schema.Message], error) {
 	chatModel, messages, opts, err := p.newChatModel(ctx, req)
 	if err != nil {
 		return nil, err
@@ -89,15 +116,15 @@ func (p *geminiProvider) Stream(ctx context.Context, req *provider.GenerateReque
 }
 
 // ListModels fetches available Gemini models from GET /v1beta/models.
-func (p *geminiProvider) ListModels(ctx context.Context) ([]provider.ModelInfo, error) {
-	url := fmt.Sprintf("%s/v1beta/models?key=%s", p.config.BaseURL, p.config.APIKey)
+func (p *Provider) ListModels(ctx context.Context) ([]provider.ModelInfo, error) {
+	url := fmt.Sprintf("%s/v1beta/models?key=%s", p.ProviderConfig.BaseURL, p.ProviderConfig.APIKey)
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("gemini: build request: %w", err)
 	}
 	p.setHeaders(httpReq)
 
-	httpClient := provider.BuildHTTPClient(p.config, nil, nil)
+	httpClient := provider.BuildHTTPClient(p.ProviderConfig, nil, nil)
 	resp, err := httpClient.Do(httpReq)
 	if err != nil {
 		return nil, fmt.Errorf("gemini: request failed: %w", err)
@@ -130,7 +157,7 @@ func (p *geminiProvider) ListModels(ctx context.Context) ([]provider.ModelInfo, 
 	return out, nil
 }
 
-func (p *geminiProvider) Capabilities() provider.ProviderCapabilities {
+func (p *Provider) Capabilities() provider.ProviderCapabilities {
 	return provider.ProviderCapabilities{
 		Streaming:       true,
 		Tools:           true,
@@ -141,8 +168,8 @@ func (p *geminiProvider) Capabilities() provider.ProviderCapabilities {
 	}
 }
 
-func (p *geminiProvider) newChatModel(ctx context.Context, req *provider.GenerateRequest) (einomodel.ToolCallingChatModel, []*schema.Message, []einomodel.Option, error) {
-	state, err := provider.ResolveChatRequest(ctx, p.config, req)
+func (p *Provider) newChatModel(ctx context.Context, req *provider.GenerateRequest) (einomodel.ToolCallingChatModel, []*schema.Message, []einomodel.Option, error) {
+	state, err := provider.ResolveChatRequest(ctx, p.ProviderConfig, req)
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -151,7 +178,7 @@ func (p *geminiProvider) newChatModel(ctx context.Context, req *provider.Generat
 	// Build a new one only when a per-request credential changes the API key or base URL.
 	client := p.genaiClient
 	if state.Credential != nil {
-		client, err = buildGenaiClient(ctx, state.APIKey, state.BaseURL, p.config.Network, state.Credential)
+		client, err = buildGenaiClient(ctx, state.APIKey, state.BaseURL, p.ProviderConfig.Network, state.Credential)
 		if err != nil {
 			return nil, nil, nil, fmt.Errorf("gemini: build credential client: %w", err)
 		}
@@ -168,11 +195,15 @@ func (p *geminiProvider) newChatModel(ctx context.Context, req *provider.Generat
 	return chatModel, state.Messages, state.Options, nil
 }
 
-func (p *geminiProvider) setHeaders(req *http.Request) {
+func (p *Provider) setHeaders(req *http.Request) {
 	req.Header.Set("Content-Type", "application/json")
-	for k, v := range p.config.Network.ExtraHeaders {
+	for k, v := range p.ProviderConfig.Network.ExtraHeaders {
 		req.Header.Set(k, v)
 	}
 }
 
-var _ provider.Provider = (*geminiProvider)(nil)
+var (
+	_ caddy.Provisioner     = (*Provider)(nil)
+	_ caddyfile.Unmarshaler = (*Provider)(nil)
+	_ provider.Provider     = (*Provider)(nil)
+)

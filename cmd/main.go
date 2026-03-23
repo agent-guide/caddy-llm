@@ -13,7 +13,7 @@ import (
 	_ "github.com/agent-guide/caddy-llm/api/llmapi/openai"
 	_ "github.com/agent-guide/caddy-llm/llm"
 
-	// LLM Providers (register via init())
+	// LLM Providers (register as factory + Caddy modules via init())
 	_ "github.com/agent-guide/caddy-llm/llm/provider/anthropic"
 	_ "github.com/agent-guide/caddy-llm/llm/provider/gemini"
 	_ "github.com/agent-guide/caddy-llm/llm/provider/ollama"

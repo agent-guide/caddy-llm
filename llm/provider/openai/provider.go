@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/caddyserver/caddy/v2"
+	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 	einoopenai "github.com/cloudwego/eino-ext/components/model/openai"
 	einomodel "github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
@@ -16,10 +18,11 @@ import (
 
 func init() {
 	provider.RegisterProvider("openai", New)
+	caddy.RegisterModule(Provider{})
 }
 
-type openAIProvider struct {
-	config provider.ProviderConfig
+type Provider struct {
+	provider.ProviderConfig
 	*openaibase.Base
 }
 
@@ -29,9 +32,6 @@ type openAIProvider struct {
 //   - "organization": string → sent as OpenAI-Organization header.
 //   - "project":      string → sent as OpenAI-Project header.
 func New(config provider.ProviderConfig) (provider.Provider, error) {
-	if config.APIKey == "" {
-		return nil, fmt.Errorf("openai: api_key is required")
-	}
 	if config.BaseURL == "" {
 		config.BaseURL = "https://api.openai.com/v1"
 	}
@@ -53,14 +53,41 @@ func New(config provider.ProviderConfig) (provider.Provider, error) {
 		}
 	}
 
-	return &openAIProvider{
-		config: config,
-		Base:   openaibase.NewBase(config),
+	return &Provider{
+		ProviderConfig: config,
+		Base:           openaibase.NewBase(config),
 	}, nil
 }
 
-func (p *openAIProvider) Generate(ctx context.Context, req *provider.GenerateRequest) (*provider.GenerateResponse, error) {
-	return provider.RetryGenerate(p.config.Network, func() (*provider.GenerateResponse, error) {
+func (Provider) CaddyModule() caddy.ModuleInfo {
+	return caddy.ModuleInfo{
+		ID:  "llm.providers.openai",
+		New: func() caddy.Module { return new(Provider) },
+	}
+}
+
+func (p *Provider) Provision(_ caddy.Context) error {
+	if err := provider.ValidateConfigName(&p.ProviderConfig, "openai"); err != nil {
+		return err
+	}
+	built, err := New(p.ProviderConfig)
+	if err != nil {
+		return err
+	}
+	mod, ok := built.(*Provider)
+	if !ok {
+		return fmt.Errorf("openai: unexpected provider type %T", built)
+	}
+	*p = *mod
+	return nil
+}
+
+func (p *Provider) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
+	return provider.UnmarshalCaddyfileConfig(d, &p.ProviderConfig)
+}
+
+func (p *Provider) Generate(ctx context.Context, req *provider.GenerateRequest) (*provider.GenerateResponse, error) {
+	return provider.RetryGenerate(p.ProviderConfig.Network, func() (*provider.GenerateResponse, error) {
 		chatModel, messages, opts, err := p.newChatModel(ctx, req)
 		if err != nil {
 			return nil, err
@@ -73,7 +100,7 @@ func (p *openAIProvider) Generate(ctx context.Context, req *provider.GenerateReq
 	})
 }
 
-func (p *openAIProvider) Stream(ctx context.Context, req *provider.GenerateRequest) (*schema.StreamReader[*schema.Message], error) {
+func (p *Provider) Stream(ctx context.Context, req *provider.GenerateRequest) (*schema.StreamReader[*schema.Message], error) {
 	chatModel, messages, opts, err := p.newChatModel(ctx, req)
 	if err != nil {
 		return nil, err
@@ -85,8 +112,8 @@ func (p *openAIProvider) Stream(ctx context.Context, req *provider.GenerateReque
 	return stream, nil
 }
 
-func (p *openAIProvider) newChatModel(ctx context.Context, req *provider.GenerateRequest) (einomodel.ToolCallingChatModel, []*schema.Message, []einomodel.Option, error) {
-	state, err := provider.ResolveChatRequest(ctx, p.config, req)
+func (p *Provider) newChatModel(ctx context.Context, req *provider.GenerateRequest) (einomodel.ToolCallingChatModel, []*schema.Message, []einomodel.Option, error) {
+	state, err := provider.ResolveChatRequest(ctx, p.ProviderConfig, req)
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -95,7 +122,7 @@ func (p *openAIProvider) newChatModel(ctx context.Context, req *provider.Generat
 		APIKey:     state.APIKey,
 		BaseURL:    state.BaseURL,
 		Model:      state.ModelName,
-		HTTPClient: provider.BuildHTTPClient(p.config, nil, state.Credential),
+		HTTPClient: provider.BuildHTTPClient(p.ProviderConfig, nil, state.Credential),
 	}
 
 	chatModel, err := einoopenai.NewChatModel(ctx, cfg)
@@ -105,7 +132,7 @@ func (p *openAIProvider) newChatModel(ctx context.Context, req *provider.Generat
 	return chatModel, state.Messages, state.Options, nil
 }
 
-func (p *openAIProvider) Capabilities() provider.ProviderCapabilities {
+func (p *Provider) Capabilities() provider.ProviderCapabilities {
 	return provider.ProviderCapabilities{
 		Streaming:       true,
 		Tools:           true,
@@ -118,6 +145,8 @@ func (p *openAIProvider) Capabilities() provider.ProviderCapabilities {
 
 // Interface guards.
 var (
-	_ provider.Provider          = (*openAIProvider)(nil)
-	_ provider.EmbeddingProvider = (*openAIProvider)(nil)
+	_ caddy.Provisioner          = (*Provider)(nil)
+	_ caddyfile.Unmarshaler      = (*Provider)(nil)
+	_ provider.Provider          = (*Provider)(nil)
+	_ provider.EmbeddingProvider = (*Provider)(nil)
 )

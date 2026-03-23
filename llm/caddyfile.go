@@ -28,6 +28,10 @@ func parseApp(d *caddyfile.Dispenser, existingVal any) (any, error) {
 
 	for d.NextBlock(0) {
 		switch d.Val() {
+		case "provider":
+			if err := parseProvider(d, app); err != nil {
+				return nil, err
+			}
 		case "config_store":
 			if err := parseConfigStore(d, app); err != nil {
 				return nil, err
@@ -45,6 +49,24 @@ func parseApp(d *caddyfile.Dispenser, existingVal any) (any, error) {
 		Name:  "llm",
 		Value: caddyconfig.JSON(app, nil),
 	}, nil
+}
+
+func parseProvider(d *caddyfile.Dispenser, app *App) error {
+	if !d.NextArg() {
+		return d.ArgErr()
+	}
+	name := d.Val()
+	modID := "llm.providers." + name
+	unm, err := caddyfile.UnmarshalModule(d, modID)
+	if err != nil {
+		return err
+	}
+
+	if app.ProvidersRaw == nil {
+		app.ProvidersRaw = make(map[string]json.RawMessage)
+	}
+	app.ProvidersRaw[name] = caddyconfig.JSON(unm, nil)
+	return nil
 }
 
 func parseConfigStore(d *caddyfile.Dispenser, app *App) error {

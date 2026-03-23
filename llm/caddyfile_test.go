@@ -8,6 +8,7 @@ import (
 	"github.com/agent-guide/caddy-llm/llm/authmanager/credential"
 	"github.com/agent-guide/caddy-llm/llm/authmanager/manager"
 	configstoresqlite "github.com/agent-guide/caddy-llm/llm/configstore/sqlite"
+	_ "github.com/agent-guide/caddy-llm/llm/provider/ollama"
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 	"github.com/caddyserver/caddy/v2/caddyconfig/httpcaddyfile"
@@ -60,6 +61,11 @@ var _ manager.Authenticator = (*testAuthenticatorModule)(nil)
 func TestParseAppFromCaddyfile(t *testing.T) {
 	d := caddyfile.NewTestDispenser(`
 	llm {
+		provider ollama {
+			base_url http://127.0.0.1:11434/v1
+			default_model qwen2.5
+		}
+
 		config_store sqlite {
 			path /tmp/caddy-llm.db
 		}
@@ -90,6 +96,23 @@ func TestParseAppFromCaddyfile(t *testing.T) {
 
 	if len(app.ConfigStoreRaw) != 1 {
 		t.Fatalf("config_store count = %d, want 1", len(app.ConfigStoreRaw))
+	}
+	if len(app.ProvidersRaw) != 1 {
+		t.Fatalf("provider count = %d, want 1", len(app.ProvidersRaw))
+	}
+
+	var ollama struct {
+		BaseURL      string `json:"base_url,omitempty"`
+		DefaultModel string `json:"default_model,omitempty"`
+	}
+	if err := json.Unmarshal(app.ProvidersRaw["ollama"], &ollama); err != nil {
+		t.Fatalf("unmarshal ollama provider: %v", err)
+	}
+	if ollama.BaseURL != "http://127.0.0.1:11434/v1" {
+		t.Fatalf("ollama base_url = %q", ollama.BaseURL)
+	}
+	if ollama.DefaultModel != "qwen2.5" {
+		t.Fatalf("ollama default_model = %q", ollama.DefaultModel)
 	}
 
 	var cfg configstoresqlite.SQLiteConfigStore

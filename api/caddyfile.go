@@ -13,10 +13,14 @@ func (h *LLMAPIHandler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 			switch d.Val() {
 			case "llm_api":
 				args := d.RemainingArgs()
-				if len(args) != 1 {
+				if len(args) < 1 || len(args) > 2 {
 					return d.ArgErr()
 				}
-				h.LLMAPIs = append(h.LLMAPIs, args[0])
+				binding := Binding{API: args[0]}
+				if len(args) == 2 {
+					binding.Provider = args[1]
+				}
+				h.Bindings = append(h.Bindings, binding)
 			default:
 				return d.Errf("unknown directive: %s", d.Val())
 			}
