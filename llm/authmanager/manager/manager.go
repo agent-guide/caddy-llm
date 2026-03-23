@@ -8,7 +8,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/agent-guide/caddy-llm/llm/authmanager/authenticator"
 	"github.com/agent-guide/caddy-llm/llm/authmanager/credential"
 	"github.com/agent-guide/caddy-llm/llm/configstore/intf"
 	"github.com/google/uuid"
@@ -116,8 +115,6 @@ func NewManager(store intf.CredentialStorer, selector Selector, hook Hook) *Mana
 		refreshSemaphore: make(chan struct{}, defaultRefreshMaxConcurrent),
 	}
 	m.scheduler = newAuthScheduler(selector)
-	m.RegisterAuthenticator("codex", authenticator.NewCodexAuthenticator())
-	m.RegisterAuthenticator("claude", authenticator.NewClaudeAuthenticator())
 	return m
 }
 

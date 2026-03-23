@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"path/filepath"
 
+	"github.com/agent-guide/caddy-llm/llm/authmanager/authenticator"
 	"github.com/caddyserver/caddy/v2"
 	"go.uber.org/zap"
 
@@ -22,6 +23,8 @@ func init() {
 type App struct {
 	// Providers lists the configured LLM providers.
 	Providers []caddy.ModuleMap `json:"providers,omitempty" caddy:"namespace=llm.providers"`
+	// Authenticators configures CLI credential authenticators under the llm.authenticators namespace.
+	AuthenticatorsRaw caddy.ModuleMap `json:"authenticators,omitempty" caddy:"namespace=llm.authenticators"`
 	// ConfigStore configures persistent admin/auth state storage.
 	ConfigStoreCfg *ConfigStoreConfig `json:"config_store,omitempty"`
 
@@ -56,6 +59,9 @@ func (a *App) Provision(ctx caddy.Context) error {
 	credentialStore := a.configStorer.GetCredentialStore()
 
 	a.authManager = manager.NewManager(credentialStore, nil, nil)
+	if err := a.provisionAuthenticators(ctx); err != nil {
+		return fmt.Errorf("provision authenticators: %w", err)
+	}
 	if err := a.authManager.Load(ctx); err != nil {
 		return fmt.Errorf("load credentials: %w", err)
 	}
@@ -132,6 +138,40 @@ func (c *ConfigStoreConfig) sqliteConfig() configstoresqlite.SQLiteConfigStoreCo
 		return *c.SQLite
 	}
 	return configstoresqlite.SQLiteConfigStoreConfig{}
+}
+
+func (a *App) provisionAuthenticators(ctx caddy.Context) error {
+	if len(a.AuthenticatorsRaw) == 0 {
+		a.registerDefaultAuthenticators()
+		return nil
+	}
+
+	modules, err := ctx.LoadModule(a, "AuthenticatorsRaw")
+	if err != nil {
+		return err
+	}
+
+	loaded, ok := modules.(map[string]any)
+	if !ok {
+		return fmt.Errorf("unexpected authenticator module type %T", modules)
+	}
+	return a.registerLoadedAuthenticators(loaded)
+}
+
+func (a *App) registerDefaultAuthenticators() {
+	a.authManager.RegisterAuthenticator("codex", authenticator.NewCodexAuthenticator())
+	a.authManager.RegisterAuthenticator("claude", authenticator.NewClaudeAuthenticator())
+}
+
+func (a *App) registerLoadedAuthenticators(loaded map[string]any) error {
+	for name, mod := range loaded {
+		auth, ok := mod.(manager.Authenticator)
+		if !ok {
+			return fmt.Errorf("authenticator module %q does not implement manager.Authenticator", name)
+		}
+		a.authManager.RegisterAuthenticator(name, auth)
+	}
+	return nil
 }
 
 // Interface guards

@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/agent-guide/caddy-llm/llm/authmanager/credential"
+	"github.com/caddyserver/caddy/v2"
 	"github.com/google/uuid"
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
@@ -29,6 +30,10 @@ const (
 	geminiDefaultCallbackPort = 8085
 	geminiRefreshMaxRetries   = 3
 )
+
+func init() {
+	caddy.RegisterModule(GeminiAuthenticator{})
+}
 
 // geminiScopes are the OAuth2 scopes requested for Gemini CLI authentication.
 var geminiScopes = []string{
@@ -53,9 +58,25 @@ type GeminiAuthenticator struct {
 	HTTPClient *http.Client
 }
 
+// CaddyModule returns the Caddy module information.
+func (GeminiAuthenticator) CaddyModule() caddy.ModuleInfo {
+	return caddy.ModuleInfo{
+		ID:  "llm.authenticators.gemini",
+		New: func() caddy.Module { return new(GeminiAuthenticator) },
+	}
+}
+
 // NewGeminiAuthenticator creates a GeminiAuthenticator with default settings.
 func NewGeminiAuthenticator() *GeminiAuthenticator {
 	return &GeminiAuthenticator{CallbackPort: geminiDefaultCallbackPort}
+}
+
+// Provision applies default settings after the module is loaded.
+func (a *GeminiAuthenticator) Provision(caddy.Context) error {
+	if a.CallbackPort <= 0 {
+		a.CallbackPort = geminiDefaultCallbackPort
+	}
+	return nil
 }
 
 // Provider returns the provider name this authenticator handles.

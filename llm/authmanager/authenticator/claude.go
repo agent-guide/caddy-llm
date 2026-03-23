@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/agent-guide/caddy-llm/llm/authmanager/credential"
+	"github.com/caddyserver/caddy/v2"
 	"github.com/google/uuid"
 )
 
@@ -29,6 +30,10 @@ const (
 	claudeDefaultCallbackPort = 54545
 	claudeRefreshMaxRetries   = 3
 )
+
+func init() {
+	caddy.RegisterModule(ClaudeAuthenticator{})
+}
 
 // claudeTokenResponse represents the token endpoint response from Anthropic.
 type claudeTokenResponse struct {
@@ -59,9 +64,25 @@ type ClaudeAuthenticator struct {
 	HTTPClient *http.Client
 }
 
+// CaddyModule returns the Caddy module information.
+func (ClaudeAuthenticator) CaddyModule() caddy.ModuleInfo {
+	return caddy.ModuleInfo{
+		ID:  "llm.authenticators.claude",
+		New: func() caddy.Module { return new(ClaudeAuthenticator) },
+	}
+}
+
 // NewClaudeAuthenticator creates a ClaudeAuthenticator with default settings.
 func NewClaudeAuthenticator() *ClaudeAuthenticator {
 	return &ClaudeAuthenticator{CallbackPort: claudeDefaultCallbackPort}
+}
+
+// Provision applies default settings after the module is loaded.
+func (a *ClaudeAuthenticator) Provision(caddy.Context) error {
+	if a.CallbackPort <= 0 {
+		a.CallbackPort = claudeDefaultCallbackPort
+	}
+	return nil
 }
 
 // Provider returns the provider name this authenticator handles.

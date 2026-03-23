@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/agent-guide/caddy-llm/llm/authmanager/credential"
+	"github.com/caddyserver/caddy/v2"
 	"github.com/google/uuid"
 )
 
@@ -43,6 +44,10 @@ const (
 	codexDefaultPollInterval = 5 * time.Second
 	codexRefreshMaxRetries   = 3
 )
+
+func init() {
+	caddy.RegisterModule(CodexAuthenticator{})
+}
 
 // ---- Internal HTTP response types ----
 
@@ -105,9 +110,25 @@ type CodexAuthenticator struct {
 	HTTPClient *http.Client
 }
 
+// CaddyModule returns the Caddy module information.
+func (CodexAuthenticator) CaddyModule() caddy.ModuleInfo {
+	return caddy.ModuleInfo{
+		ID:  "llm.authenticators.codex",
+		New: func() caddy.Module { return new(CodexAuthenticator) },
+	}
+}
+
 // NewCodexAuthenticator creates a CodexAuthenticator with default settings.
 func NewCodexAuthenticator() *CodexAuthenticator {
 	return &CodexAuthenticator{CallbackPort: codexDefaultCallbackPort}
+}
+
+// Provision applies default settings after the module is loaded.
+func (a *CodexAuthenticator) Provision(caddy.Context) error {
+	if a.CallbackPort <= 0 {
+		a.CallbackPort = codexDefaultCallbackPort
+	}
+	return nil
 }
 
 // Provider returns the provider name this authenticator handles.
