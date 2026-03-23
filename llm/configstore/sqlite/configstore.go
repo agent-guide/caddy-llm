@@ -1,104 +1,125 @@
 package sqlite
 
 import (
-	"context"
 	"fmt"
 	"os"
 	"path/filepath"
 
+	"github.com/caddyserver/caddy/v2"
+	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 	"github.com/glebarez/sqlite"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 
-	"github.com/agent-guide/caddy-llm/llm/configstore"
 	"github.com/agent-guide/caddy-llm/llm/configstore/intf"
 )
 
 type SQLiteConfigStore struct {
+	SQLitePath string `json:"sqlite_path,omitempty"`
+
 	logger          *zap.Logger
-	sqlitePath      string
 	db              *gorm.DB
 	credentialStore *CredentialStore
 	providerStore   *ProviderConfigStore
 	vxAPIKeyStore   *VXApiKeyStore
 }
 
-type SQLiteConfigStoreConfig struct {
-	SQLitePath string `json:"sqlite_path,omitempty"`
-}
-
 func init() {
-	configstore.RegisterConfigStoreCreator("sqlite", NewSQLiteConfigStore)
+	caddy.RegisterModule(SQLiteConfigStore{})
 }
 
-// NewSqliteStore creates a new SQLite config store.
-func NewSQLiteConfigStore(ctx context.Context, logger *zap.Logger, config any) (intf.ConfigStorer, error) {
-	sqliteConfigStoreConfig, ok := config.(SQLiteConfigStoreConfig)
-	if !ok {
-		cfgPtr, ok := config.(*SQLiteConfigStoreConfig)
-		if !ok || cfgPtr == nil {
-			return nil, fmt.Errorf("invalid sqlite config store config type: %T", config)
-		}
-		sqliteConfigStoreConfig = *cfgPtr
+func (SQLiteConfigStore) CaddyModule() caddy.ModuleInfo {
+	return caddy.ModuleInfo{
+		ID:  "llm.config_stores.sqlite",
+		New: func() caddy.Module { return new(SQLiteConfigStore) },
 	}
+}
 
-	dbPath := sqliteConfigStoreConfig.SQLitePath
+func (s *SQLiteConfigStore) Provision(ctx caddy.Context) error {
+	s.logger = ctx.Logger(s)
+
+	dbPath := s.SQLitePath
 	if dbPath == "" {
-		return nil, fmt.Errorf("sqlite_path is required")
+		dbPath = filepath.Join(caddy.AppDataDir(), "caddy-llm", "configstore.db")
+		s.SQLitePath = dbPath
 	}
 
 	if _, err := os.Stat(dbPath); os.IsNotExist(err) {
 		if err := os.MkdirAll(filepath.Dir(dbPath), 0o755); err != nil {
-			return nil, err
+			return err
 		}
 		// Create DB file
 		f, err := os.Create(dbPath)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		_ = f.Close()
 	}
 	dsn := fmt.Sprintf("%s?_journal_mode=WAL&_synchronous=NORMAL&_cache_size=10000&_busy_timeout=60000&_wal_autocheckpoint=1000&_foreign_keys=1", dbPath)
-	logger.Debug("opening DB with dsn", zap.String("dsn", dsn))
+	s.logger.Debug("opening DB with dsn", zap.String("dsn", dsn))
 	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{
-		Logger: newGormLogger(*logger),
+		Logger: newGormLogger(*s.logger),
 	})
 	if err != nil {
-		return nil, err
+		return err
 	}
-	logger.Debug("sqlite db opened for SqliteStore")
+	s.logger.Debug("sqlite db opened for SqliteStore")
 
-	scs := &SQLiteConfigStore{sqlitePath: dbPath, db: db, logger: logger}
+	s.db = db
 
-	credentialStore, err := NewCredentialStore(ctx, scs.db)
+	credentialStore, err := NewCredentialStore(ctx, s.db)
 	if err != nil {
-		return nil, fmt.Errorf("init credential store: %w", err)
+		return fmt.Errorf("init credential store: %w", err)
 	}
-	scs.credentialStore = credentialStore
+	s.credentialStore = credentialStore
 
-	providerStore, err := NewProviderConfigStore(ctx, scs.db)
+	providerStore, err := NewProviderConfigStore(ctx, s.db)
 	if err != nil {
-		return nil, fmt.Errorf("init provider config store: %w", err)
+		return fmt.Errorf("init provider config store: %w", err)
 	}
-	scs.providerStore = providerStore
+	s.providerStore = providerStore
 
-	vxAPIKeyStore, err := NewVXApiKeyStore(ctx, scs.db)
+	vxAPIKeyStore, err := NewVXApiKeyStore(ctx, s.db)
 	if err != nil {
-		return nil, fmt.Errorf("init vx api key store: %w", err)
+		return fmt.Errorf("init vx api key store: %w", err)
 	}
-	scs.vxAPIKeyStore = vxAPIKeyStore
+	s.vxAPIKeyStore = vxAPIKeyStore
 
-	return scs, nil
+	return nil
 }
 
-func (scs *SQLiteConfigStore) GetCredentialStore() intf.CredentialStorer {
-	return scs.credentialStore
+func (s *SQLiteConfigStore) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
+	for d.Next() {
+		for d.NextBlock(0) {
+			switch d.Val() {
+			case "path":
+				if !d.NextArg() {
+					return d.ArgErr()
+				}
+				s.SQLitePath = d.Val()
+			default:
+				return d.Errf("unknown sqlite config_store subdirective: %s", d.Val())
+			}
+		}
+	}
+	return nil
 }
 
-func (scs *SQLiteConfigStore) GetProviderConfigStore() intf.ProviderConfigStorer {
-	return scs.providerStore
+func (s *SQLiteConfigStore) GetCredentialStore() intf.CredentialStorer {
+	return s.credentialStore
 }
 
-func (scs *SQLiteConfigStore) GetVXApiKeyStore() intf.VXApiKeyStorer {
-	return scs.vxAPIKeyStore
+func (s *SQLiteConfigStore) GetProviderConfigStore() intf.ProviderConfigStorer {
+	return s.providerStore
 }
+
+func (s *SQLiteConfigStore) GetVXApiKeyStore() intf.VXApiKeyStorer {
+	return s.vxAPIKeyStore
+}
+
+var (
+	_ caddy.Module          = (*SQLiteConfigStore)(nil)
+	_ caddy.Provisioner     = (*SQLiteConfigStore)(nil)
+	_ caddyfile.Unmarshaler = (*SQLiteConfigStore)(nil)
+	_ intf.ConfigStorer     = (*SQLiteConfigStore)(nil)
+)

@@ -3,7 +3,7 @@ package llm
 import (
 	"encoding/json"
 
-	configstoresqlite "github.com/agent-guide/caddy-llm/llm/configstore/sqlite"
+	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 	"github.com/caddyserver/caddy/v2/caddyconfig/httpcaddyfile"
@@ -48,41 +48,23 @@ func parseApp(d *caddyfile.Dispenser, existingVal any) (any, error) {
 }
 
 func parseConfigStore(d *caddyfile.Dispenser, app *App) error {
+	if len(app.ConfigStoreRaw) != 0 {
+		return d.Err("config_store already configured")
+	}
 	if !d.NextArg() {
 		return d.ArgErr()
 	}
-	storeType := d.Val()
-
-	switch storeType {
-	case "sqlite":
-		cfg, err := parseSQLiteConfigStore(d)
-		if err != nil {
-			return err
-		}
-		app.ConfigStoreCfg = &ConfigStoreConfig{
-			Type:   "sqlite",
-			SQLite: cfg,
-		}
-		return nil
-	default:
-		return d.Errf("unsupported config_store type: %s", storeType)
+	name := d.Val()
+	modID := "llm.config_stores." + name
+	unm, err := caddyfile.UnmarshalModule(d, modID)
+	if err != nil {
+		return err
 	}
-}
 
-func parseSQLiteConfigStore(d *caddyfile.Dispenser) (*configstoresqlite.SQLiteConfigStoreConfig, error) {
-	cfg := &configstoresqlite.SQLiteConfigStoreConfig{}
-	for d.NextBlock(1) {
-		switch d.Val() {
-		case "path":
-			if !d.NextArg() {
-				return nil, d.ArgErr()
-			}
-			cfg.SQLitePath = d.Val()
-		default:
-			return nil, d.Errf("unknown sqlite config_store subdirective: %s", d.Val())
-		}
+	app.ConfigStoreRaw = caddy.ModuleMap{
+		name: caddyconfig.JSON(unm, nil),
 	}
-	return cfg, nil
+	return nil
 }
 
 func parseAuthenticator(d *caddyfile.Dispenser, app *App) error {

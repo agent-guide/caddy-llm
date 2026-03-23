@@ -7,6 +7,7 @@ import (
 
 	"github.com/agent-guide/caddy-llm/llm/authmanager/credential"
 	"github.com/agent-guide/caddy-llm/llm/authmanager/manager"
+	configstoresqlite "github.com/agent-guide/caddy-llm/llm/configstore/sqlite"
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 	"github.com/caddyserver/caddy/v2/caddyconfig/httpcaddyfile"
@@ -87,11 +88,16 @@ func TestParseAppFromCaddyfile(t *testing.T) {
 		t.Fatalf("unmarshal app json: %v", err)
 	}
 
-	if app.ConfigStoreCfg == nil || app.ConfigStoreCfg.Type != "sqlite" {
-		t.Fatalf("config_store type = %#v, want sqlite", app.ConfigStoreCfg)
+	if len(app.ConfigStoreRaw) != 1 {
+		t.Fatalf("config_store count = %d, want 1", len(app.ConfigStoreRaw))
 	}
-	if app.ConfigStoreCfg.SQLite == nil || app.ConfigStoreCfg.SQLite.SQLitePath != "/tmp/caddy-llm.db" {
-		t.Fatalf("sqlite path = %#v, want /tmp/caddy-llm.db", app.ConfigStoreCfg.SQLite)
+
+	var cfg configstoresqlite.SQLiteConfigStore
+	if err := json.Unmarshal(app.ConfigStoreRaw["sqlite"], &cfg); err != nil {
+		t.Fatalf("unmarshal sqlite config store: %v", err)
+	}
+	if cfg.SQLitePath != "/tmp/caddy-llm.db" {
+		t.Fatalf("sqlite path = %q, want /tmp/caddy-llm.db", cfg.SQLitePath)
 	}
 	if len(app.AuthenticatorsRaw) != 1 {
 		t.Fatalf("authenticator count = %d, want 1", len(app.AuthenticatorsRaw))

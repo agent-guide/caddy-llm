@@ -2,13 +2,12 @@ package llm
 
 import (
 	"fmt"
-	"path/filepath"
 
 	"github.com/caddyserver/caddy/v2"
+	"github.com/caddyserver/caddy/v2/caddyconfig"
 	"go.uber.org/zap"
 
 	"github.com/agent-guide/caddy-llm/llm/authmanager/manager"
-	"github.com/agent-guide/caddy-llm/llm/configstore"
 	configstoreIntf "github.com/agent-guide/caddy-llm/llm/configstore/intf"
 	configstoresqlite "github.com/agent-guide/caddy-llm/llm/configstore/sqlite"
 )
@@ -25,16 +24,11 @@ type App struct {
 	// Authenticators configures CLI credential authenticators under the llm.authenticators namespace.
 	AuthenticatorsRaw caddy.ModuleMap `json:"authenticators,omitempty" caddy:"namespace=llm.authenticators"`
 	// ConfigStore configures persistent admin/auth state storage.
-	ConfigStoreCfg *ConfigStoreConfig `json:"config_store,omitempty"`
+	ConfigStoreRaw caddy.ModuleMap `json:"config_store,omitempty" caddy:"namespace=llm.config_stores"`
 
 	logger       *zap.Logger
 	authManager  *manager.Manager
 	configStorer configstoreIntf.ConfigStorer
-}
-
-type ConfigStoreConfig struct {
-	Type   string                                     `json:"type,omitempty"`
-	SQLite *configstoresqlite.SQLiteConfigStoreConfig `json:"sqlite,omitempty"`
 }
 
 // CaddyModule returns the Caddy module information.
@@ -49,12 +43,9 @@ func (App) CaddyModule() caddy.ModuleInfo {
 func (a *App) Provision(ctx caddy.Context) error {
 	a.logger = ctx.Logger(a)
 
-	storeCfg := a.effectiveConfigStoreConfig()
-	storer, err := configstore.CreateConfigStore(ctx, a.logger, storeCfg.Type, storeCfg.sqliteConfig())
-	if err != nil {
+	if err := a.provisionConfigStore(ctx); err != nil {
 		return fmt.Errorf("init config store: %w", err)
 	}
-	a.configStorer = storer
 	credentialStore := a.configStorer.GetCredentialStore()
 
 	a.authManager = manager.NewManager(credentialStore, nil, nil)
@@ -107,36 +98,36 @@ func GetApp(ctx caddy.Context) (*App, error) {
 	return app, nil
 }
 
-func (a *App) effectiveConfigStoreConfig() *ConfigStoreConfig {
-	if a.ConfigStoreCfg == nil {
-		return &ConfigStoreConfig{
-			Type: "sqlite",
-			SQLite: &configstoresqlite.SQLiteConfigStoreConfig{
-				SQLitePath: filepath.Join(caddy.AppDataDir(), "caddy-llm", "configstore.db"),
-			},
+func (a *App) provisionConfigStore(ctx caddy.Context) error {
+	if len(a.ConfigStoreRaw) == 0 {
+		a.ConfigStoreRaw = caddy.ModuleMap{
+			"sqlite": caddyconfig.JSON(&configstoresqlite.SQLiteConfigStore{}, nil),
 		}
 	}
 
-	cfg := *a.ConfigStoreCfg
-	if cfg.Type == "" {
-		cfg.Type = "sqlite"
+	modules, err := ctx.LoadModule(a, "ConfigStoreRaw")
+	if err != nil {
+		return err
 	}
-	if cfg.Type == "sqlite" {
-		if cfg.SQLite == nil {
-			cfg.SQLite = &configstoresqlite.SQLiteConfigStoreConfig{}
-		}
-		if cfg.SQLite.SQLitePath == "" {
-			cfg.SQLite.SQLitePath = filepath.Join(caddy.AppDataDir(), "caddy-llm", "configstore.db")
-		}
-	}
-	return &cfg
-}
 
-func (c *ConfigStoreConfig) sqliteConfig() configstoresqlite.SQLiteConfigStoreConfig {
-	if c != nil && c.SQLite != nil {
-		return *c.SQLite
+	loaded, ok := modules.(map[string]any)
+	if !ok {
+		return fmt.Errorf("unexpected config store module type %T", modules)
 	}
-	return configstoresqlite.SQLiteConfigStoreConfig{}
+	if len(loaded) != 1 {
+		return fmt.Errorf("expected exactly one config store module, got %d", len(loaded))
+	}
+
+	for name, mod := range loaded {
+		storer, ok := mod.(configstoreIntf.ConfigStorer)
+		if !ok {
+			return fmt.Errorf("config store module %q does not implement configstore.ConfigStorer", name)
+		}
+		a.configStorer = storer
+		return nil
+	}
+
+	return fmt.Errorf("no config store module loaded")
 }
 
 func (a *App) provisionAuthenticators(ctx caddy.Context) error {
