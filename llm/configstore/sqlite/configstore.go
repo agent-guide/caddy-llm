@@ -74,12 +74,6 @@ func (s *SQLiteConfigStore) Provision(ctx caddy.Context) error {
 	}
 	s.providerStore = providerStore
 
-	vxAPIKeyStore, err := NewVXApiKeyStore(ctx, s.db)
-	if err != nil {
-		return fmt.Errorf("init vx api key store: %w", err)
-	}
-	s.vxAPIKeyStore = vxAPIKeyStore
-
 	return nil
 }
 
@@ -117,8 +111,17 @@ func (s *SQLiteConfigStore) GetProviderConfigStore() intf.ProviderConfigStorer {
 	return s.providerStore
 }
 
-func (s *SQLiteConfigStore) GetVXApiKeyStore() intf.VXApiKeyStorer {
-	return s.vxAPIKeyStore
+func (s *SQLiteConfigStore) GetVXApiKeyStore(ctx context.Context, decodeVXApiKey intf.ConfigObjectDecoder) (intf.VXApiKeyStorer, error) {
+	if s.vxAPIKeyStore != nil {
+		return s.vxAPIKeyStore, nil
+	}
+
+	vxAPIKeyStore, err := NewVXApiKeyStore(ctx, s.db, decodeVXApiKey)
+	if err != nil {
+		return nil, fmt.Errorf("init credential store: %w", err)
+	}
+	s.vxAPIKeyStore = vxAPIKeyStore
+	return vxAPIKeyStore, nil
 }
 
 var (

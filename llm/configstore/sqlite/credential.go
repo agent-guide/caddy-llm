@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/agent-guide/caddy-llm/llm/configstore/intf"
 	"gorm.io/gorm"
@@ -11,6 +12,8 @@ import (
 
 type credentialRecord struct {
 	sqliteJSONRecord
+	CreatedAt time.Time `gorm:"autoCreateTime"`
+	UpdatedAt time.Time `gorm:"autoUpdateTime"`
 }
 
 func (credentialRecord) TableName() string { return "credentials" }

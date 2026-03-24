@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"time"
+	"strings"
 
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -13,34 +13,42 @@ import (
 )
 
 type sqliteJSONRecord struct {
-	ID        string    `gorm:"primaryKey"`
-	Tag       string    `gorm:"index;not null"`
-	Data      string    `gorm:"type:text;not null"`
-	UpdatedAt time.Time `gorm:"autoUpdateTime"`
+	ID   string `gorm:"primaryKey"`
+	Tag  string `gorm:"index;not null"`
+	Data string `gorm:"type:text;not null"`
 }
 
 type sqliteJSONStore struct {
-	db     *gorm.DB
-	table  string
-	kind   string
-	decode intf.ConfigObjectDecoder
-	// decode sqliteJSONDecoder
+	db        *gorm.DB
+	table     string
+	kind      string
+	idField   string
+	tagField  string
+	dataField string
+	decode    intf.ConfigObjectDecoder
 }
 
 func newSQLiteJSONStore(db *gorm.DB, table string, kind string, decode intf.ConfigObjectDecoder) *sqliteJSONStore {
+	return newSQLiteJSONStoreWithColumns(db, table, kind, "id", "tag", "data", decode)
+}
+
+func newSQLiteJSONStoreWithColumns(db *gorm.DB, table string, kind string, idField string, tagField string, dataField string, decode intf.ConfigObjectDecoder) *sqliteJSONStore {
 	return &sqliteJSONStore{
-		db:     db,
-		table:  table,
-		kind:   kind,
-		decode: decode,
+		db:        db,
+		table:     table,
+		kind:      kind,
+		idField:   idField,
+		tagField:  tagField,
+		dataField: dataField,
+		decode:    decode,
 	}
 }
 
 func (s *sqliteJSONStore) ListByTagPrefix(ctx context.Context, tagPrefix string) ([]any, error) {
 	var rows []sqliteJSONRecord
-	query := s.db.WithContext(ctx).Table(s.table).Order("id asc")
+	query := s.baseQuery(ctx)
 	if tagPrefix != "" {
-		query = query.Where("tag LIKE ?", tagPrefix+"%")
+		query = query.Where(s.columnName(s.tagField)+" LIKE ?", tagPrefix+"%")
 	}
 	if err := query.Find(&rows).Error; err != nil {
 		return nil, err
@@ -59,9 +67,9 @@ func (s *sqliteJSONStore) ListByTagPrefix(ctx context.Context, tagPrefix string)
 
 func (s *sqliteJSONStore) ListByTag(ctx context.Context, tag string) ([]any, error) {
 	var rows []sqliteJSONRecord
-	query := s.db.WithContext(ctx).Table(s.table).Order("id asc")
+	query := s.baseQuery(ctx)
 	if tag != "" {
-		query = query.Where("tag = ?", tag)
+		query = query.Where(s.columnName(s.tagField)+" = ?", tag)
 	}
 	if err := query.Find(&rows).Error; err != nil {
 		return nil, err
@@ -86,7 +94,7 @@ func (s *sqliteJSONStore) Save(ctx context.Context, id string, tag string, obj a
 	if err := s.db.WithContext(ctx).
 		Table(s.table).
 		Clauses(clause.OnConflict{UpdateAll: true}).
-		Create(&row).Error; err != nil {
+		Create(s.dbRecord(row)).Error; err != nil {
 		return "", err
 	}
 	return row.ID, nil
@@ -95,13 +103,13 @@ func (s *sqliteJSONStore) Save(ctx context.Context, id string, tag string, obj a
 func (s *sqliteJSONStore) Delete(ctx context.Context, id string) error {
 	return s.db.WithContext(ctx).
 		Table(s.table).
-		Where("id = ?", id).
+		Where(s.columnName(s.idField)+" = ?", id).
 		Delete(&sqliteJSONRecord{}).Error
 }
 
 func (s *sqliteJSONStore) Get(ctx context.Context, id string) (string, any, error) {
 	var row sqliteJSONRecord
-	if err := s.db.WithContext(ctx).Table(s.table).Where("id = ?", id).First(&row).Error; err != nil {
+	if err := s.baseQuery(ctx).Where(s.columnName(s.idField)+" = ?", id).First(&row).Error; err != nil {
 		return "", nil, err
 	}
 
@@ -133,4 +141,27 @@ func (s *sqliteJSONStore) newRecord(id string, tag string, obj any) (sqliteJSONR
 		Tag:  tag,
 		Data: string(data),
 	}, nil
+}
+
+func (s *sqliteJSONStore) baseQuery(ctx context.Context) *gorm.DB {
+	return s.db.WithContext(ctx).
+		Table(s.table).
+		Select(strings.Join([]string{
+			fmt.Sprintf("%s AS id", s.columnName(s.idField)),
+			fmt.Sprintf("%s AS tag", s.columnName(s.tagField)),
+			fmt.Sprintf("%s AS data", s.columnName(s.dataField)),
+		}, ", ")).
+		Order(s.columnName(s.idField) + " asc")
+}
+
+func (s *sqliteJSONStore) dbRecord(row sqliteJSONRecord) map[string]any {
+	return map[string]any{
+		s.idField:   row.ID,
+		s.tagField:  row.Tag,
+		s.dataField: row.Data,
+	}
+}
+
+func (s *sqliteJSONStore) columnName(name string) string {
+	return s.db.NamingStrategy.ColumnName(s.table, name)
 }
