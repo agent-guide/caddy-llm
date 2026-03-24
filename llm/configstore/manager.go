@@ -1,29 +1,21 @@
 package configstore
 
-import (
-	"context"
-	"fmt"
+// var (
+// 	configstoreCreators map[string]intf.ConfigStoreCreator
+// )
 
-	"github.com/agent-guide/caddy-llm/llm/configstore/intf"
-	"go.uber.org/zap"
-)
+// func init() {
+// 	configstoreCreators = make(map[string]intf.ConfigStoreCreator)
+// }
 
-var (
-	configstoreCreators map[string]intf.ConfigStoreCreator
-)
+// func RegisterConfigStoreCreator(name string, creator intf.ConfigStoreCreator) {
+// 	configstoreCreators[name] = creator
+// }
 
-func init() {
-	configstoreCreators = make(map[string]intf.ConfigStoreCreator)
-}
-
-func RegisterConfigStoreCreator(name string, creator intf.ConfigStoreCreator) {
-	configstoreCreators[name] = creator
-}
-
-func CreateConfigStore(ctx context.Context, logger *zap.Logger, name string, config any) (intf.ConfigStorer, error) {
-	creator, ok := configstoreCreators[name]
-	if !ok {
-		return nil, fmt.Errorf("unknown config store: %s", name)
-	}
-	return creator(ctx, logger, config)
-}
+// func CreateConfigStore(ctx context.Context, logger *zap.Logger, name string, config any) (intf.ConfigStorer, error) {
+// 	creator, ok := configstoreCreators[name]
+// 	if !ok {
+// 		return nil, fmt.Errorf("unknown config store: %s", name)
+// 	}
+// 	return creator(ctx, logger, config)
+// }

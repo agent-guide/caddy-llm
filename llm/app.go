@@ -8,6 +8,7 @@ import (
 	"github.com/caddyserver/caddy/v2/caddyconfig"
 	"go.uber.org/zap"
 
+	"github.com/agent-guide/caddy-llm/llm/authmanager/credential"
 	"github.com/agent-guide/caddy-llm/llm/authmanager/manager"
 	configstoreIntf "github.com/agent-guide/caddy-llm/llm/configstore/intf"
 	configstoresqlite "github.com/agent-guide/caddy-llm/llm/configstore/sqlite"
@@ -49,7 +50,10 @@ func (a *App) Provision(ctx caddy.Context) error {
 	if err := a.provisionConfigStore(ctx); err != nil {
 		return fmt.Errorf("init config store: %w", err)
 	}
-	credentialStore := a.configStorer.GetCredentialStore()
+	credentialStore, err := a.configStorer.GetCredentialStore(ctx, credential.DecodeCredential)
+	if err != nil {
+		return fmt.Errorf("get credential store: %w", err)
+	}
 
 	a.authManager = manager.NewManager(credentialStore, nil, nil)
 	if err := a.provisionProviders(ctx); err != nil {

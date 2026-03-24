@@ -1,6 +1,7 @@
 package sqlite
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -67,12 +68,6 @@ func (s *SQLiteConfigStore) Provision(ctx caddy.Context) error {
 
 	s.db = db
 
-	credentialStore, err := NewCredentialStore(ctx, s.db)
-	if err != nil {
-		return fmt.Errorf("init credential store: %w", err)
-	}
-	s.credentialStore = credentialStore
-
 	providerStore, err := NewProviderConfigStore(ctx, s.db)
 	if err != nil {
 		return fmt.Errorf("init provider config store: %w", err)
@@ -105,8 +100,17 @@ func (s *SQLiteConfigStore) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	return nil
 }
 
-func (s *SQLiteConfigStore) GetCredentialStore() intf.CredentialStorer {
-	return s.credentialStore
+func (s *SQLiteConfigStore) GetCredentialStore(ctx context.Context, decodeCredential intf.ConfigObjectDecoder) (intf.CredentialStorer, error) {
+	if s.credentialStore != nil {
+		return s.credentialStore, nil
+	}
+
+	credentialStore, err := NewCredentialStore(ctx, s.db, decodeCredential)
+	if err != nil {
+		return nil, fmt.Errorf("init credential store: %w", err)
+	}
+	s.credentialStore = credentialStore
+	return credentialStore, nil
 }
 
 func (s *SQLiteConfigStore) GetProviderConfigStore() intf.ProviderConfigStorer {

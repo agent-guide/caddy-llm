@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"strconv"
 	"strings"
 	"time"
@@ -83,6 +84,14 @@ type ModelState struct {
 	Quota QuotaState `json:"quota"`
 	// UpdatedAt tracks the last update timestamp for this model state.
 	UpdatedAt time.Time `json:"updated_at"`
+}
+
+func DecodeCredential(data []byte) (any, error) {
+	var c Credential
+	if err := json.Unmarshal(data, &c); err != nil {
+		return nil, fmt.Errorf("Decode credential object error: %w", err)
+	}
+	return &c, nil
 }
 
 // Clone shallow copies the Credential, duplicating maps to avoid accidental mutation.

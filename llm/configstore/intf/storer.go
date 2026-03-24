@@ -2,16 +2,14 @@ package intf
 
 import (
 	"context"
-
-	"go.uber.org/zap"
 )
 
+type ConfigObjectDecoder func(data []byte) (any, error)
+
 type ConfigStorer interface {
-	GetCredentialStore() CredentialStorer
+	GetCredentialStore(ctx context.Context, decodeConfigObject ConfigObjectDecoder) (CredentialStorer, error)
 
 	GetProviderConfigStore() ProviderConfigStorer
 
 	GetVXApiKeyStore() VXApiKeyStorer
 }
-
-type ConfigStoreCreator func(ctx context.Context, logger *zap.Logger, config any) (ConfigStorer, error)
