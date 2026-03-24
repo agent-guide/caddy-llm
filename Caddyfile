@@ -1,7 +1,7 @@
 # Caddy LLM AI Gateway
 # Caddy App module ID: "llm"
 # HTTP handler module IDs:
-# - "http.handlers.llm_api" (Caddyfile directive: "handle_llm_api")
+# - "http.handlers.llm_api.openai" / "http.handlers.llm_api.anthropic" (Caddyfile directive: "handle_llm_api")
 # - "http.handlers.llm_admin" (Caddyfile directive: "handle_llm_admin")
 
 {
@@ -21,9 +21,12 @@ localhost:8082 {
 
 	# LLM API routes
 	route /v1/* {
-		handle_llm_api {
-			llm_api openai
-			llm_api anthropic anthropic
+		handle_llm_api openai {
+			provider openai
+		}
+
+		handle_llm_api anthropic {
+			provider anthropic
 		}
 	}
 

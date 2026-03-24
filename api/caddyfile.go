@@ -1,38 +1,39 @@
 package api
 
 import (
+	"fmt"
+
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 	"github.com/caddyserver/caddy/v2/caddyconfig/httpcaddyfile"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 )
 
-// UnmarshalCaddyfile implements caddyfile.Unmarshaler.
-func (h *LLMAPIHandler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
-	for d.Next() {
-		for d.NextBlock(0) {
-			switch d.Val() {
-			case "llm_api":
-				args := d.RemainingArgs()
-				if len(args) < 1 || len(args) > 2 {
-					return d.ArgErr()
-				}
-				binding := Binding{API: args[0]}
-				if len(args) == 2 {
-					binding.Provider = args[1]
-				}
-				h.Bindings = append(h.Bindings, binding)
-			default:
-				return d.Errf("unknown directive: %s", d.Val())
-			}
-		}
-	}
-	return nil
+func init() {
+	httpcaddyfile.RegisterHandlerDirective("handle_llm_api", parseHandleLLMAPI)
 }
 
 func parseHandleLLMAPI(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error) {
-	var handler LLMAPIHandler
-	if err := handler.UnmarshalCaddyfile(h.Dispenser); err != nil {
+	d := h.Dispenser
+	if !d.Next() {
+		return nil, d.Err("expected directive name")
+	}
+	if !d.NextArg() {
+		return nil, d.Err("expected llm api name")
+	}
+	apiName := d.Val()
+	if d.NextArg() {
+		return nil, d.ArgErr()
+	}
+
+	moduleID := "http.handlers.llm_api." + apiName
+	unm, err := caddyfile.UnmarshalModule(d, moduleID)
+	if err != nil {
 		return nil, err
 	}
-	return &handler, nil
+
+	handler, ok := unm.(caddyhttp.MiddlewareHandler)
+	if !ok {
+		return nil, fmt.Errorf("%s does not implement caddyhttp.MiddlewareHandler", moduleID)
+	}
+	return handler, nil
 }

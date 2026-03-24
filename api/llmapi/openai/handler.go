@@ -10,16 +10,20 @@ import (
 	"strings"
 	"time"
 
+	llm "github.com/agent-guide/caddy-llm/llm"
 	"github.com/agent-guide/caddy-llm/llm/authmanager/credential"
 	"github.com/agent-guide/caddy-llm/llm/authmanager/manager"
 	"github.com/agent-guide/caddy-llm/llm/provider"
 	"github.com/caddyserver/caddy/v2"
+	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
+	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 	"github.com/cloudwego/eino/schema"
-	"go.uber.org/zap"
 )
 
 // Handler handles OpenAI-format API requests (/v1/chat/completions, etc.).
 type Handler struct {
+	Provider string `json:"provider,omitempty"`
+
 	authManager *manager.Manager
 	prov        provider.Provider
 }
@@ -38,29 +42,53 @@ func (Handler) CaddyModule() caddy.ModuleInfo {
 
 // NewHandler creates a Handler with the given auth manager and provider.
 func NewHandler(authMgr *manager.Manager, prov provider.Provider) *Handler {
-	return &Handler{authManager: authMgr, prov: prov}
+	return &Handler{Provider: "openai", authManager: authMgr, prov: prov}
 }
 
-// ProvisionLLMApi injects shared gateway dependencies.
-func (h *Handler) ProvisionLLMApi(authMgr *manager.Manager, prov provider.Provider, _ *zap.Logger) error {
-	h.authManager = authMgr
+func (h *Handler) Provision(ctx caddy.Context) error {
+	if h.Provider == "" {
+		h.Provider = "openai"
+	}
+
+	app, err := llm.GetApp(ctx)
+	if err != nil {
+		return fmt.Errorf("openai llm api: get llm app: %w", err)
+	}
+	prov, ok := app.Provider(h.Provider)
+	if !ok {
+		return fmt.Errorf("openai llm api: provider %q is not configured", h.Provider)
+	}
+
+	h.authManager = app.AuthManager()
 	h.prov = prov
 	return nil
 }
 
-// Name returns the handler name.
-func (h *Handler) Name() string { return "openai" }
-
-// MatchLLMApi returns true when the request targets the OpenAI-compatible surface.
-func (h *Handler) MatchLLMApi(r *http.Request) bool {
-	return strings.HasPrefix(r.URL.Path, "/v1/chat/completions") ||
-		strings.HasPrefix(r.URL.Path, "/v1/models") ||
-		strings.HasPrefix(r.URL.Path, "/v1/embeddings")
+func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
+	for d.Next() {
+		for d.NextBlock(0) {
+			switch d.Val() {
+			case "provider":
+				if !d.NextArg() {
+					return d.ArgErr()
+				}
+				h.Provider = d.Val()
+			default:
+				return d.Errf("unknown subdirective: %s", d.Val())
+			}
+		}
+	}
+	return nil
 }
 
 // ServeHTTP handles OpenAI API requests.
-func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	_ = h.ServeLLMApi(w, r)
+func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
+	if !strings.HasPrefix(r.URL.Path, "/v1/chat/completions") &&
+		!strings.HasPrefix(r.URL.Path, "/v1/models") &&
+		!strings.HasPrefix(r.URL.Path, "/v1/embeddings") {
+		return next.ServeHTTP(w, r)
+	}
+	return h.ServeLLMApi(w, r)
 }
 
 // ServeLLMApi handles OpenAI-compatible API requests.
@@ -226,3 +254,9 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 func writeError(w http.ResponseWriter, status int, msg string) {
 	writeJSON(w, status, map[string]string{"error": msg})
 }
+
+var (
+	_ caddy.Provisioner           = (*Handler)(nil)
+	_ caddyfile.Unmarshaler       = (*Handler)(nil)
+	_ caddyhttp.MiddlewareHandler = (*Handler)(nil)
+)

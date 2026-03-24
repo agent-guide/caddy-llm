@@ -118,11 +118,17 @@ Authenticators are configuration-driven now: if you do not declare an `authentic
 
 localhost:8082 {
     route /v1/* {
-        handle_llm_api {
-            llm_api openai
-            llm_api anthropic anthropic
-            # openai-compatible ingress backed by a different provider:
-            # llm_api openai openrouter
+        handle_llm_api openai {
+            provider openai
+        }
+
+        handle_llm_api anthropic {
+            provider anthropic
+        }
+
+        # openai-compatible ingress backed by a different provider:
+        # handle_llm_api openai {
+        #     provider openrouter
         }
     }
 
@@ -132,4 +138,4 @@ localhost:8082 {
 }
 ```
 
-Custom providers can be added by shipping a Caddy module under `llm.providers.<name>` that implements the shared `provider.Provider` interface. Once the module is linked into the Caddy build, it can be mounted with `provider <name> { ... }` inside the global `llm` block and referenced from `handle_llm_api`.
+Custom providers can be added by shipping a Caddy module under `llm.providers.<name>` that implements the shared `provider.Provider` interface. Once the module is linked into the Caddy build, it can be mounted with `provider <name> { ... }` inside the global `llm` block and referenced from `handle_llm_api <api> { provider <name> }`.
