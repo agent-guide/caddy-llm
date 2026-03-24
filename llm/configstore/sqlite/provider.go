@@ -31,11 +31,11 @@ func NewProviderConfigStore(ctx context.Context, db *gorm.DB) (*ProviderConfigSt
 	return &ProviderConfigStore{db: db}, nil
 }
 
-func (s *ProviderConfigStore) ListByTag(ctx context.Context, tag string) ([]any, error) {
+func (s *ProviderConfigStore) ListByName(ctx context.Context, name string) ([]any, error) {
 	var rows []providerConfigRecord
 	query := s.db.WithContext(ctx).Order("id asc")
-	if tag != "" {
-		query = query.Where("tag = ?", tag)
+	if name != "" {
+		query = query.Where("tag = ?", name)
 	}
 	if err := query.Find(&rows).Error; err != nil {
 		return nil, err

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"reflect"
 	"time"
 
 	"gorm.io/gorm"
@@ -31,12 +32,9 @@ func NewVXApiKeyStore(ctx context.Context, db *gorm.DB) (*VXApiKeyStore, error) 
 	return &VXApiKeyStore{db: db}, nil
 }
 
-func (s *VXApiKeyStore) ListByProviderConfigID(ctx context.Context, providerID string) ([]any, error) {
+func (s *VXApiKeyStore) List(ctx context.Context) ([]any, error) {
 	var rows []vxAPIKeyRecord
 	query := s.db.WithContext(ctx).Order("key asc")
-	if providerID != "" {
-		query = query.Where("provider_id = ?", providerID)
-	}
 	if err := query.Find(&rows).Error; err != nil {
 		return nil, err
 	}
@@ -52,8 +50,8 @@ func (s *VXApiKeyStore) ListByProviderConfigID(ctx context.Context, providerID s
 	return out, nil
 }
 
-func (s *VXApiKeyStore) Save(ctx context.Context, key string, providerID string, obj any) error {
-	record, err := newVXApiKeyRecord(key, providerID, obj)
+func (s *VXApiKeyStore) Save(ctx context.Context, key string, obj any) error {
+	record, err := newVXApiKeyRecord(key, obj)
 	if err != nil {
 		return err
 	}
@@ -95,14 +93,15 @@ func (s *VXApiKeyStore) Get(ctx context.Context, key string) (any, error) {
 	return decodeVXApiKey(row)
 }
 
-func newVXApiKeyRecord(key string, providerID string, obj any) (vxAPIKeyRecord, error) {
+func newVXApiKeyRecord(key string, obj any) (vxAPIKeyRecord, error) {
 	if key == "" {
 		return vxAPIKeyRecord{}, fmt.Errorf("vx api key is empty")
 	}
-	if providerID == "" {
-		return vxAPIKeyRecord{}, fmt.Errorf("vx api key provider id is empty")
-	}
 
+	providerID, err := extractVXApiKeyProviderID(obj)
+	if err != nil {
+		return vxAPIKeyRecord{}, err
+	}
 	data, err := marshalVXApiKey(obj)
 	if err != nil {
 		return vxAPIKeyRecord{}, err
@@ -113,6 +112,59 @@ func newVXApiKeyRecord(key string, providerID string, obj any) (vxAPIKeyRecord, 
 		ProviderID: providerID,
 		Config:     string(data),
 	}, nil
+}
+
+func extractVXApiKeyProviderID(obj any) (string, error) {
+	if obj == nil {
+		return "", fmt.Errorf("vx api key config is nil")
+	}
+
+	if providerID := extractProviderIDFromValue(reflect.ValueOf(obj)); providerID != "" {
+		return providerID, nil
+	}
+
+	return "", fmt.Errorf("vx api key provider id is empty")
+}
+
+func extractProviderIDFromValue(v reflect.Value) string {
+	for v.IsValid() && (v.Kind() == reflect.Pointer || v.Kind() == reflect.Interface) {
+		if v.IsNil() {
+			return ""
+		}
+		v = v.Elem()
+	}
+
+	if !v.IsValid() {
+		return ""
+	}
+
+	switch v.Kind() {
+	case reflect.Map:
+		for _, key := range []string{"provider_id", "ProviderId", "providerId", "providerID", "ProviderID"} {
+			value := v.MapIndex(reflect.ValueOf(key))
+			if !value.IsValid() {
+				continue
+			}
+			for value.IsValid() && (value.Kind() == reflect.Pointer || value.Kind() == reflect.Interface) {
+				if value.IsNil() {
+					return ""
+				}
+				value = value.Elem()
+			}
+			if value.IsValid() && value.Kind() == reflect.String {
+				return value.String()
+			}
+		}
+	case reflect.Struct:
+		for _, field := range []string{"ProviderId", "ProviderID"} {
+			fv := v.FieldByName(field)
+			if fv.IsValid() && fv.Kind() == reflect.String {
+				return fv.String()
+			}
+		}
+	}
+
+	return ""
 }
 
 func marshalVXApiKey(obj any) ([]byte, error) {

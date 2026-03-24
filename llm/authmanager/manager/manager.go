@@ -188,7 +188,7 @@ func (m *Manager) Load(ctx context.Context) error {
 	if m.store == nil {
 		return nil
 	}
-	items, err := m.store.ListByTag(ctx, "")
+	items, err := m.store.ListByProviderName(ctx, "")
 	if err != nil {
 		return fmt.Errorf("manager: load from store: %w", err)
 	}

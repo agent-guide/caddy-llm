@@ -34,11 +34,11 @@ func NewCredentialStore(ctx context.Context, db *gorm.DB) (*CredentialStore, err
 	return &CredentialStore{db: db}, nil
 }
 
-func (s *CredentialStore) ListByTag(ctx context.Context, tag string) ([]any, error) {
+func (s *CredentialStore) ListByProviderName(ctx context.Context, providerName string) ([]any, error) {
 	var rows []credentialRecord
 	query := s.db.WithContext(ctx).Order("id asc")
-	if tag != "" {
-		query = query.Where("tag = ?", tag)
+	if providerName != "" {
+		query = query.Where("tag = ?", providerName)
 	}
 	if err := query.Find(&rows).Error; err != nil {
 		return nil, err

@@ -78,7 +78,7 @@ func (h *Handler) handleListProviders(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	items, err := store.ListByTag(r.Context(), r.URL.Query().Get("tag"))
+	items, err := store.ListByName(r.Context(), r.URL.Query().Get("tag"))
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
