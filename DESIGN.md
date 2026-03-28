@@ -525,6 +525,20 @@ type ConfigStore interface {
 }
 ```
 
+The runtime config store also persists `LocalAPIKey` records for agent-to-gateway authentication. A `LocalAPIKey` binds a gateway-issued `local_key` to the upstream access information required for later requests:
+
+```go
+type LocalAPIKey struct {
+    LocalKey      string   `json:"local_key"`
+    UserID        string   `json:"user_id"`
+    ProviderName  string   `json:"provider_name,omitempty"`
+    APIKey        string   `json:"api_key,omitempty"`
+    CredentialIDs []string `json:"credential_ids,omitempty"`
+    Disabled      bool     `json:"disabled"`
+    StatusMessage string   `json:"status_message,omitempty"`
+}
+```
+
 #### 3.5.3 Database Schema (SQLite)
 ```sql
 CREATE TABLE providers (
@@ -578,13 +592,12 @@ CREATE TABLE config (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE TABLE api_keys (
-    id         TEXT PRIMARY KEY,
-    key_hash   TEXT NOT NULL UNIQUE,
-    name       TEXT NOT NULL,
-    scopes     JSON NOT NULL,
+CREATE TABLE local_api_keys (
+    key        TEXT PRIMARY KEY,
+    user_id    TEXT NOT NULL,
+    config     JSON NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    expires_at TIMESTAMP
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 ```
 

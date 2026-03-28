@@ -2,7 +2,7 @@ package intf
 
 import "context"
 
-type VXApiKeyStorer interface {
+type LocalAPIKeyStorer interface {
 	List(ctx context.Context) ([]any, error)
 
 	Save(ctx context.Context, key string, obj any) error

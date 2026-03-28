@@ -47,7 +47,9 @@ The gateway includes a credential manager with persistence, selection, status tr
 
 ### Config Store
 
-The default config store is backed by SQLite. It persists credentials, provider configuration, and related gateway state, giving the project a practical default for local development and self-hosted deployments while leaving room for additional backends later.
+The default config store is backed by SQLite. It persists credentials, provider configuration, local gateway API keys, and related gateway state, giving the project a practical default for local development and self-hosted deployments while leaving room for additional backends later.
+
+`LocalAPIKey` is the stored object used for agent-to-gateway authentication. Each record binds a gateway-issued `local_key` to the upstream access information needed for later requests, including the target provider, direct upstream `api_key`, or a set of CLI-managed `credential_ids`.
 
 ### MCP, Memory, and Agent Runtime
 

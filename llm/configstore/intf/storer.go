@@ -11,5 +11,5 @@ type ConfigStorer interface {
 
 	GetProviderConfigStore() ProviderConfigStorer
 
-	GetVXApiKeyStore(ctx context.Context, decodeVXApiKey ConfigObjectDecoder) (VXApiKeyStorer, error)
+	GetLocalAPIKeyStore(ctx context.Context, decodeLocalAPIKey ConfigObjectDecoder) (LocalAPIKeyStorer, error)
 }

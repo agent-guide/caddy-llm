@@ -18,11 +18,11 @@ import (
 type SQLiteConfigStore struct {
 	SQLitePath string `json:"sqlite_path,omitempty"`
 
-	logger          *zap.Logger
-	db              *gorm.DB
-	credentialStore *CredentialStore
-	providerStore   *ProviderConfigStore
-	vxAPIKeyStore   *VXApiKeyStore
+	logger           *zap.Logger
+	db               *gorm.DB
+	credentialStore  *CredentialStore
+	providerStore    *ProviderConfigStore
+	localAPIKeyStore *LocalAPIKeyStore
 }
 
 func init() {
@@ -111,17 +111,17 @@ func (s *SQLiteConfigStore) GetProviderConfigStore() intf.ProviderConfigStorer {
 	return s.providerStore
 }
 
-func (s *SQLiteConfigStore) GetVXApiKeyStore(ctx context.Context, decodeVXApiKey intf.ConfigObjectDecoder) (intf.VXApiKeyStorer, error) {
-	if s.vxAPIKeyStore != nil {
-		return s.vxAPIKeyStore, nil
+func (s *SQLiteConfigStore) GetLocalAPIKeyStore(ctx context.Context, decodeLocalAPIKey intf.ConfigObjectDecoder) (intf.LocalAPIKeyStorer, error) {
+	if s.localAPIKeyStore != nil {
+		return s.localAPIKeyStore, nil
 	}
 
-	vxAPIKeyStore, err := NewVXApiKeyStore(ctx, s.db, decodeVXApiKey)
+	localAPIKeyStore, err := NewLocalAPIKeyStore(ctx, s.db, decodeLocalAPIKey)
 	if err != nil {
-		return nil, fmt.Errorf("init credential store: %w", err)
+		return nil, fmt.Errorf("init local api key store: %w", err)
 	}
-	s.vxAPIKeyStore = vxAPIKeyStore
-	return vxAPIKeyStore, nil
+	s.localAPIKeyStore = localAPIKeyStore
+	return localAPIKeyStore, nil
 }
 
 var (
