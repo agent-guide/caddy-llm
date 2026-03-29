@@ -22,11 +22,14 @@ localhost:8082 {
 	# LLM API routes
 	route /v1/* {
 		handle_llm_api openai {
-			provider openai
+			route_id openai-chat
+		}
+		handle_llm_api anthropic {
+			route_id openai-chat
 		}
 
-		handle_llm_api anthropic {
-			provider anthropic
+		agent_gateway_route openai-chat {
+			target openai
 		}
 	}
 

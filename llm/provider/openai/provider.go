@@ -143,6 +143,10 @@ func (p *Provider) Capabilities() provider.ProviderCapabilities {
 	}
 }
 
+func (p *Provider) Config() provider.ProviderConfig {
+	return p.ProviderConfig
+}
+
 // Interface guards.
 var (
 	_ caddy.Provisioner          = (*Provider)(nil)

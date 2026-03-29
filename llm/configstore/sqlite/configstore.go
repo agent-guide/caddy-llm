@@ -23,6 +23,7 @@ type SQLiteConfigStore struct {
 	credentialStore  *CredentialStore
 	providerStore    *ProviderConfigStore
 	localAPIKeyStore *LocalAPIKeyStore
+	routeStore       *RouteStore
 }
 
 func init() {
@@ -122,6 +123,19 @@ func (s *SQLiteConfigStore) GetLocalAPIKeyStore(ctx context.Context, decodeLocal
 	}
 	s.localAPIKeyStore = localAPIKeyStore
 	return localAPIKeyStore, nil
+}
+
+func (s *SQLiteConfigStore) GetRouteStore(ctx context.Context, decodeRoute intf.ConfigObjectDecoder) (intf.RouteStorer, error) {
+	if s.routeStore != nil {
+		return s.routeStore, nil
+	}
+
+	routeStore, err := NewRouteStore(ctx, s.db, decodeRoute)
+	if err != nil {
+		return nil, fmt.Errorf("init route store: %w", err)
+	}
+	s.routeStore = routeStore
+	return routeStore, nil
 }
 
 var (

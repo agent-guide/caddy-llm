@@ -525,17 +525,15 @@ type ConfigStore interface {
 }
 ```
 
-The runtime config store also persists `LocalAPIKey` records for agent-to-gateway authentication. A `LocalAPIKey` binds a gateway-issued `local_key` to the upstream access information required for later requests:
+The runtime config store also persists `LocalAPIKey` records for agent-to-gateway authentication. The current model treats `LocalAPIKey` as a gateway consumer identity plus authorization scope, rather than a wrapper around upstream provider credentials. The canonical type now lives in the `gateway` package, and the decoder keeps backward compatibility with older stored records:
 
 ```go
 type LocalAPIKey struct {
-    LocalKey      string   `json:"local_key"`
-    UserID        string   `json:"user_id"`
-    ProviderName  string   `json:"provider_name,omitempty"`
-    APIKey        string   `json:"api_key,omitempty"`
-    CredentialIDs []string `json:"credential_ids,omitempty"`
-    Disabled      bool     `json:"disabled"`
-    StatusMessage string   `json:"status_message,omitempty"`
+    Key             string   `json:"key"`
+    UserID          string   `json:"user_id,omitempty"`
+    AllowedRouteIDs []string `json:"allowed_route_ids,omitempty"`
+    Disabled        bool     `json:"disabled"`
+    StatusMessage   string   `json:"status_message,omitempty"`
 }
 ```
 

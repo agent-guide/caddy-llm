@@ -2,6 +2,8 @@ package provider
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"time"
 
 	einomodel "github.com/cloudwego/eino/components/model"
@@ -26,6 +28,9 @@ type Provider interface {
 
 	// Capabilities returns what this provider instance supports.
 	Capabilities() ProviderCapabilities
+
+	// Config returns the provider instance configuration view used at runtime.
+	Config() ProviderConfig
 }
 
 // EmbeddingProvider is an optional interface for providers that support embeddings.
@@ -43,6 +48,17 @@ type StatusError interface {
 	error
 	StatusCode() int
 }
+
+// AuthStrategy controls how a provider instance chooses between static API keys
+// and managed credentials for upstream requests.
+type AuthStrategy string
+
+const (
+	AuthStrategyAPIKeyFirst     AuthStrategy = "api_key_first"
+	AuthStrategyCredentialFirst AuthStrategy = "credential_first"
+	AuthStrategyCredentialOnly  AuthStrategy = "credential_only"
+	AuthStrategyAPIKeyOnly      AuthStrategy = "api_key_only"
+)
 
 // ProviderCapabilities describes what a provider instance supports.
 type ProviderCapabilities struct {
@@ -68,6 +84,8 @@ type ProviderConfig struct {
 	Network NetworkConfig `json:"network"`
 	// Options holds provider-specific extra configuration.
 	Options map[string]any `json:"options,omitempty"`
+	// AuthStrategy controls how static API keys and managed credentials are combined.
+	AuthStrategy AuthStrategy `json:"auth_strategy,omitempty"`
 }
 
 // NetworkConfig controls HTTP client behavior for a provider.
@@ -104,6 +122,14 @@ func (c *NetworkConfig) Timeout() time.Duration {
 		return 120 * time.Second
 	}
 	return time.Duration(c.TimeoutSeconds) * time.Second
+}
+
+// Defaults fills in zero values with sensible defaults.
+func (c *ProviderConfig) Defaults() {
+	c.Network.Defaults()
+	if c.AuthStrategy == "" {
+		c.AuthStrategy = AuthStrategyAPIKeyFirst
+	}
 }
 
 // --- Request / Response types ---
@@ -147,4 +173,21 @@ type ModelInfo struct {
 type Usage struct {
 	InputTokens  int
 	OutputTokens int
+}
+
+// DecodeStoredProviderConfig converts a config-store provider payload into ProviderConfig.
+func DecodeStoredProviderConfig(tag string, obj any) (ProviderConfig, error) {
+	var cfg ProviderConfig
+	data, err := json.Marshal(obj)
+	if err != nil {
+		return cfg, fmt.Errorf("marshal stored provider config: %w", err)
+	}
+	if err := json.Unmarshal(data, &cfg); err != nil {
+		return cfg, fmt.Errorf("unmarshal stored provider config: %w", err)
+	}
+	if cfg.Name == "" {
+		cfg.Name = tag
+	}
+	cfg.Defaults()
+	return cfg, nil
 }

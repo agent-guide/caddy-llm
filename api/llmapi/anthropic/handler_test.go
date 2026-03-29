@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/agent-guide/caddy-llm/gateway"
 	"github.com/cloudwego/eino/schema"
 
 	"github.com/agent-guide/caddy-llm/llm/authmanager/credential"
@@ -35,6 +36,10 @@ func (p *testProvider) Capabilities() provider.ProviderCapabilities {
 	return provider.ProviderCapabilities{Streaming: true}
 }
 
+func (p *testProvider) Config() provider.ProviderConfig {
+	return provider.ProviderConfig{}
+}
+
 type testStatusError struct {
 	msg    string
 	status int
@@ -42,6 +47,27 @@ type testStatusError struct {
 
 func (e testStatusError) Error() string   { return e.msg }
 func (e testStatusError) StatusCode() int { return e.status }
+
+func newSeededHandler(authMgr *manager.Manager, prov provider.Provider) *Handler {
+	handler := NewHandler(prov)
+	gateway.ResetGlobalAgentGateway().Configure(nil, gateway.NewStaticProviderResolver(func(name string) (provider.Provider, bool) {
+		if name != "anthropic" || prov == nil {
+			return nil, false
+		}
+		return prov, true
+	}), nil, authMgr, nil)
+	handler.RouteID = "anthropic-test-route"
+	gateway.GlobalAgentGateway().EnsureRoute(gateway.Route{
+		ID:   handler.RouteID,
+		Name: handler.RouteID,
+		Targets: []gateway.RouteTarget{{
+			ProviderRef: "anthropic",
+			Mode:        gateway.TargetModeWeighted,
+			Weight:      1,
+		}},
+	})
+	return handler
+}
 
 func TestServeLLMApiMarksAnthropicStreamFailures(t *testing.T) {
 	authMgr := manager.NewManager(nil, nil, nil)
@@ -52,7 +78,7 @@ func TestServeLLMApiMarksAnthropicStreamFailures(t *testing.T) {
 		t.Fatalf("register credential: %v", err)
 	}
 
-	handler := NewHandler(authMgr, &testProvider{
+	handler := newSeededHandler(authMgr, &testProvider{
 		streamErr: testStatusError{msg: "rate limit", status: http.StatusTooManyRequests},
 	})
 

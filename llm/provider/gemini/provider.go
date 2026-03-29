@@ -168,6 +168,10 @@ func (p *Provider) Capabilities() provider.ProviderCapabilities {
 	}
 }
 
+func (p *Provider) Config() provider.ProviderConfig {
+	return p.ProviderConfig
+}
+
 func (p *Provider) newChatModel(ctx context.Context, req *provider.GenerateRequest) (einomodel.ToolCallingChatModel, []*schema.Message, []einomodel.Option, error) {
 	state, err := provider.ResolveChatRequest(ctx, p.ProviderConfig, req)
 	if err != nil {

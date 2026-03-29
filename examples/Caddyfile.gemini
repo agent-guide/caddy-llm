@@ -1,5 +1,6 @@
-# Caddy LLM Router - Gemini Configuration
-# This configuration proxies Anthropic API requests to Google Gemini
+# Legacy example
+# This file uses the older llm_router syntax and is kept only as historical reference.
+# Prefer the route-oriented handle_llm_api + target configuration shown in README.md.
 
 localhost:8082 {
 	route /v1/* {

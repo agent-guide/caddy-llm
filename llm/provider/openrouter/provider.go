@@ -118,6 +118,10 @@ func (p *Provider) Capabilities() provider.ProviderCapabilities {
 	}
 }
 
+func (p *Provider) Config() provider.ProviderConfig {
+	return p.ProviderConfig
+}
+
 var (
 	_ caddy.Provisioner     = (*Provider)(nil)
 	_ caddyfile.Unmarshaler = (*Provider)(nil)

@@ -3,29 +3,24 @@ package openai
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"strings"
 	"time"
 
+	"github.com/agent-guide/caddy-llm/api"
+	"github.com/agent-guide/caddy-llm/gateway"
 	llm "github.com/agent-guide/caddy-llm/llm"
-	"github.com/agent-guide/caddy-llm/llm/authmanager/credential"
-	"github.com/agent-guide/caddy-llm/llm/authmanager/manager"
 	"github.com/agent-guide/caddy-llm/llm/provider"
 	"github.com/caddyserver/caddy/v2"
-	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 	"github.com/cloudwego/eino/schema"
 )
 
 // Handler handles OpenAI-format API requests (/v1/chat/completions, etc.).
 type Handler struct {
-	Provider string `json:"provider,omitempty"`
-
-	authManager *manager.Manager
-	prov        provider.Provider
+	RouteID string `json:"route_id,omitempty"`
 }
 
 func init() {
@@ -40,43 +35,26 @@ func (Handler) CaddyModule() caddy.ModuleInfo {
 	}
 }
 
-// NewHandler creates a Handler with the given auth manager and provider.
-func NewHandler(authMgr *manager.Manager, prov provider.Provider) *Handler {
-	return &Handler{Provider: "openai", authManager: authMgr, prov: prov}
+// NewHandler creates a Handler.
+func NewHandler() *Handler {
+	return &Handler{}
+}
+
+func (h *Handler) SetRouteID(routeID string) {
+	h.RouteID = routeID
 }
 
 func (h *Handler) Provision(ctx caddy.Context) error {
-	if h.Provider == "" {
-		h.Provider = "openai"
-	}
-
 	app, err := llm.GetApp(ctx)
 	if err != nil {
 		return fmt.Errorf("openai llm api: get llm app: %w", err)
 	}
-	prov, ok := app.Provider(h.Provider)
-	if !ok {
-		return fmt.Errorf("openai llm api: provider %q is not configured", h.Provider)
+	gw, err := gateway.ConfigureGlobalAgentGateway(app)
+	if err != nil {
+		return fmt.Errorf("openai llm api: configure global agent gateway: %w", err)
 	}
-
-	h.authManager = app.AuthManager()
-	h.prov = prov
-	return nil
-}
-
-func (h *Handler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
-	for d.Next() {
-		for d.NextBlock(0) {
-			switch d.Val() {
-			case "provider":
-				if !d.NextArg() {
-					return d.ArgErr()
-				}
-				h.Provider = d.Val()
-			default:
-				return d.Errf("unknown subdirective: %s", d.Val())
-			}
-		}
+	if err := gw.ValidateRoute(context.Background(), h.RouteID); err != nil {
+		return fmt.Errorf("openai llm api: %w", err)
 	}
 	return nil
 }
@@ -112,22 +90,18 @@ func (h *Handler) ServeLLMApi(w http.ResponseWriter, r *http.Request) error {
 
 	conv := &Converter{}
 	genReq := conv.ToInternal(&req)
-
-	// Pick a credential and inject into context for per-request auth override.
-	ctx := r.Context()
-	var cred *credential.Credential
-	if c, err := h.authManager.Pick(ctx, "openai", genReq.Model, nil); err == nil && c != nil {
-		cred = c
-		ctx = provider.WithCredential(ctx, c)
-	}
-
-	if req.Stream {
-		h.serveStream(w, ctx, genReq, cred)
+	resolved, err := api.ResolveRequest(r, genReq.Model, req.Stream, h.RouteID)
+	if err != nil {
+		writeError(w, api.StatusCode(err), err.Error())
 		return nil
 	}
 
-	resp, err := h.prov.Generate(ctx, genReq)
-	h.markResult(ctx, cred, genReq.Model, err)
+	if req.Stream {
+		h.serveStream(w, r.Context(), resolved.Provider, genReq)
+		return nil
+	}
+
+	resp, err := resolved.Provider.Generate(r.Context(), genReq)
 	if err != nil {
 		writeError(w, http.StatusBadGateway, err.Error())
 		return nil
@@ -136,37 +110,8 @@ func (h *Handler) ServeLLMApi(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
-// markResult feeds the outcome of a provider call back to the auth manager so
-// quota tracking and credential health are updated accordingly.
-func (h *Handler) markResult(ctx context.Context, cred *credential.Credential, model string, err error) {
-	if h.authManager == nil || cred == nil {
-		return
-	}
-	result := manager.Result{
-		CredentialID: cred.ID,
-		Provider:     cred.Provider,
-		Model:        model,
-		Success:      err == nil,
-	}
-	if err != nil {
-		var se provider.StatusError
-		httpStatus := http.StatusBadGateway
-		if errors.As(err, &se) {
-			httpStatus = se.StatusCode()
-		}
-		result.Error = &credential.Error{
-			Code:       http.StatusText(httpStatus),
-			Message:    err.Error(),
-			HTTPStatus: httpStatus,
-			Retryable:  httpStatus == http.StatusTooManyRequests || httpStatus >= 500,
-		}
-	}
-	h.authManager.MarkResult(ctx, result)
-}
-
-func (h *Handler) serveStream(w http.ResponseWriter, ctx context.Context, genReq *provider.GenerateRequest, cred *credential.Credential) {
-	stream, err := h.prov.Stream(ctx, genReq)
-	h.markResult(ctx, cred, genReq.Model, err)
+func (h *Handler) serveStream(w http.ResponseWriter, ctx context.Context, prov provider.Provider, genReq *provider.GenerateRequest) {
+	stream, err := prov.Stream(ctx, genReq)
 	if err != nil {
 		writeError(w, http.StatusBadGateway, err.Error())
 		return
@@ -257,6 +202,5 @@ func writeError(w http.ResponseWriter, status int, msg string) {
 
 var (
 	_ caddy.Provisioner           = (*Handler)(nil)
-	_ caddyfile.Unmarshaler       = (*Handler)(nil)
 	_ caddyhttp.MiddlewareHandler = (*Handler)(nil)
 )

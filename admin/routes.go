@@ -1,10 +1,12 @@
 package admin
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net/http"
 
+	"github.com/agent-guide/caddy-llm/gateway"
 	"github.com/agent-guide/caddy-llm/llm/configstore/intf"
 	"gorm.io/gorm"
 )
@@ -28,6 +30,16 @@ func (h *Handler) Routes() []Route {
 		{Method: http.MethodGet, Path: "/admin/providers/{id}", Handler: h.handleGetProvider},
 		{Method: http.MethodPut, Path: "/admin/providers/{id}", Handler: h.handleUpdateProvider},
 		{Method: http.MethodDelete, Path: "/admin/providers/{id}", Handler: h.handleDeleteProvider},
+		{Method: http.MethodGet, Path: "/admin/routes", Handler: h.handleListRoutes},
+		{Method: http.MethodPost, Path: "/admin/routes", Handler: h.handleCreateRoute},
+		{Method: http.MethodGet, Path: "/admin/routes/{id}", Handler: h.handleGetRoute},
+		{Method: http.MethodPut, Path: "/admin/routes/{id}", Handler: h.handleUpdateRoute},
+		{Method: http.MethodDelete, Path: "/admin/routes/{id}", Handler: h.handleDeleteRoute},
+		{Method: http.MethodGet, Path: "/admin/local_api_keys", Handler: h.handleListLocalAPIKeys},
+		{Method: http.MethodPost, Path: "/admin/local_api_keys", Handler: h.handleCreateLocalAPIKey},
+		{Method: http.MethodGet, Path: "/admin/local_api_keys/{key}", Handler: h.handleGetLocalAPIKey},
+		{Method: http.MethodPut, Path: "/admin/local_api_keys/{key}", Handler: h.handleUpdateLocalAPIKey},
+		{Method: http.MethodDelete, Path: "/admin/local_api_keys/{key}", Handler: h.handleDeleteLocalAPIKey},
 		{Method: http.MethodGet, Path: "/admin/credentials", Handler: h.handleListCredentials},
 		{Method: http.MethodGet, Path: "/admin/credentials/{id}", Handler: h.handleGetCredential},
 		{Method: http.MethodDelete, Path: "/admin/credentials/{id}", Handler: h.handleDeleteCredential},
@@ -185,6 +197,243 @@ func (h *Handler) handleDeleteProvider(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted", "id": id})
 }
 
+func (h *Handler) handleListRoutes(w http.ResponseWriter, r *http.Request) {
+	store := h.routeStore()
+	if store == nil {
+		writeError(w, http.StatusServiceUnavailable, "route store not configured")
+		return
+	}
+
+	items, err := store.List(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": items})
+}
+
+func (h *Handler) handleCreateRoute(w http.ResponseWriter, r *http.Request) {
+	store := h.routeStore()
+	if store == nil {
+		writeError(w, http.StatusServiceUnavailable, "route store not configured")
+		return
+	}
+
+	var route gateway.Route
+	if err := decodeJSON(r, &route); err != nil {
+		writeError(w, http.StatusBadRequest, fmt.Sprintf("decode request: %v", err))
+		return
+	}
+	if route.ID == "" {
+		writeError(w, http.StatusBadRequest, "id is required")
+		return
+	}
+	if route.Name == "" {
+		route.Name = route.ID
+	}
+	if len(route.Targets) == 0 {
+		writeError(w, http.StatusBadRequest, "at least one target is required")
+		return
+	}
+	route.Policy.Defaults()
+
+	if err := store.Save(r.Context(), route.ID, &route); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusCreated, route)
+}
+
+func (h *Handler) handleGetRoute(w http.ResponseWriter, r *http.Request) {
+	store := h.routeStore()
+	if store == nil {
+		writeError(w, http.StatusServiceUnavailable, "route store not configured")
+		return
+	}
+
+	item, err := store.Get(r.Context(), r.PathValue("id"))
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			writeError(w, http.StatusNotFound, "route not found")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, item)
+}
+
+func (h *Handler) handleUpdateRoute(w http.ResponseWriter, r *http.Request) {
+	store := h.routeStore()
+	if store == nil {
+		writeError(w, http.StatusServiceUnavailable, "route store not configured")
+		return
+	}
+
+	var route gateway.Route
+	if err := decodeJSON(r, &route); err != nil {
+		writeError(w, http.StatusBadRequest, fmt.Sprintf("decode request: %v", err))
+		return
+	}
+	id := r.PathValue("id")
+	if route.ID == "" {
+		route.ID = id
+	}
+	if route.ID != id {
+		writeError(w, http.StatusBadRequest, "route id in body must match path")
+		return
+	}
+	if route.Name == "" {
+		route.Name = route.ID
+	}
+	if len(route.Targets) == 0 {
+		writeError(w, http.StatusBadRequest, "at least one target is required")
+		return
+	}
+	route.Policy.Defaults()
+
+	if err := store.Update(r.Context(), id, &route); err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			writeError(w, http.StatusNotFound, "route not found")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	item, err := store.Get(r.Context(), id)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, item)
+}
+
+func (h *Handler) handleDeleteRoute(w http.ResponseWriter, r *http.Request) {
+	store := h.routeStore()
+	if store == nil {
+		writeError(w, http.StatusServiceUnavailable, "route store not configured")
+		return
+	}
+
+	id := r.PathValue("id")
+	if err := store.Delete(r.Context(), id); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted", "id": id})
+}
+
+func (h *Handler) handleListLocalAPIKeys(w http.ResponseWriter, r *http.Request) {
+	store := h.localAPIKeyStore()
+	if store == nil {
+		writeError(w, http.StatusServiceUnavailable, "local api key store not configured")
+		return
+	}
+
+	items, err := store.List(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": items})
+}
+
+func (h *Handler) handleCreateLocalAPIKey(w http.ResponseWriter, r *http.Request) {
+	store := h.localAPIKeyStore()
+	if store == nil {
+		writeError(w, http.StatusServiceUnavailable, "local api key store not configured")
+		return
+	}
+
+	var key gateway.LocalAPIKey
+	if err := decodeJSON(r, &key); err != nil {
+		writeError(w, http.StatusBadRequest, fmt.Sprintf("decode request: %v", err))
+		return
+	}
+	if key.Key == "" {
+		writeError(w, http.StatusBadRequest, "key is required")
+		return
+	}
+
+	if err := store.Save(r.Context(), key.Key, &key); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusCreated, key)
+}
+
+func (h *Handler) handleGetLocalAPIKey(w http.ResponseWriter, r *http.Request) {
+	store := h.localAPIKeyStore()
+	if store == nil {
+		writeError(w, http.StatusServiceUnavailable, "local api key store not configured")
+		return
+	}
+
+	item, err := store.Get(r.Context(), r.PathValue("key"))
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			writeError(w, http.StatusNotFound, "local api key not found")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, item)
+}
+
+func (h *Handler) handleUpdateLocalAPIKey(w http.ResponseWriter, r *http.Request) {
+	store := h.localAPIKeyStore()
+	if store == nil {
+		writeError(w, http.StatusServiceUnavailable, "local api key store not configured")
+		return
+	}
+
+	var key gateway.LocalAPIKey
+	if err := decodeJSON(r, &key); err != nil {
+		writeError(w, http.StatusBadRequest, fmt.Sprintf("decode request: %v", err))
+		return
+	}
+	pathKey := r.PathValue("key")
+	if key.Key == "" {
+		key.Key = pathKey
+	}
+	if key.Key != pathKey {
+		writeError(w, http.StatusBadRequest, "local api key in body must match path")
+		return
+	}
+
+	if _, err := store.Get(r.Context(), pathKey); err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			writeError(w, http.StatusNotFound, "local api key not found")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	if err := store.Save(r.Context(), key.Key, &key); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, key)
+}
+
+func (h *Handler) handleDeleteLocalAPIKey(w http.ResponseWriter, r *http.Request) {
+	store := h.localAPIKeyStore()
+	if store == nil {
+		writeError(w, http.StatusServiceUnavailable, "local api key store not configured")
+		return
+	}
+
+	key := r.PathValue("key")
+	if err := store.Delete(r.Context(), key); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted", "key": key})
+}
+
 func (h *Handler) handleListCredentials(w http.ResponseWriter, r *http.Request) {
 	if h.authManager == nil {
 		writeError(w, http.StatusServiceUnavailable, "auth manager not configured")
@@ -279,4 +528,26 @@ func (h *Handler) providerStore() intf.ProviderConfigStorer {
 		return nil
 	}
 	return h.configStore.GetProviderConfigStore()
+}
+
+func (h *Handler) routeStore() intf.RouteStorer {
+	if h.configStore == nil {
+		return nil
+	}
+	store, err := h.configStore.GetRouteStore(context.Background(), gateway.DecodeRoute)
+	if err != nil {
+		return nil
+	}
+	return store
+}
+
+func (h *Handler) localAPIKeyStore() intf.LocalAPIKeyStorer {
+	if h.configStore == nil {
+		return nil
+	}
+	store, err := h.configStore.GetLocalAPIKeyStore(context.Background(), gateway.DecodeLocalAPIKey)
+	if err != nil {
+		return nil
+	}
+	return store
 }

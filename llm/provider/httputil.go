@@ -156,18 +156,35 @@ func isRetryable(err error) bool {
 }
 
 func ResolveCredential(ctx context.Context, config ProviderConfig) (apiKey string, baseURL string, cred *credential.Credential) {
+	config.Defaults()
 	apiKey = config.APIKey
 	baseURL = config.BaseURL
 
 	if c, ok := CredentialFromContext(ctx); ok {
-		cred = c
-		if token, _ := c.Metadata["access_token"].(string); token != "" {
-			apiKey = token
-		} else if key := strings.TrimSpace(c.APIKey()); key != "" {
-			apiKey = key
+		switch config.AuthStrategy {
+		case AuthStrategyAPIKeyOnly:
+			return apiKey, baseURL, nil
+		case AuthStrategyAPIKeyFirst:
+			if strings.TrimSpace(apiKey) == "" {
+				cred = c
+			}
+		case AuthStrategyCredentialOnly, AuthStrategyCredentialFirst:
+			cred = c
+			apiKey = ""
+		default:
+			if strings.TrimSpace(apiKey) == "" {
+				cred = c
+			}
 		}
-		if u := strings.TrimSpace(c.BaseURL()); u != "" {
-			baseURL = u
+		if cred != nil {
+			if token, _ := cred.Metadata["access_token"].(string); token != "" {
+				apiKey = token
+			} else if key := strings.TrimSpace(cred.APIKey()); key != "" {
+				apiKey = key
+			}
+			if u := strings.TrimSpace(cred.BaseURL()); u != "" {
+				baseURL = u
+			}
 		}
 	}
 

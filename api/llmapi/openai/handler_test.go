@@ -4,17 +4,33 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 
+	"github.com/agent-guide/caddy-llm/admin"
+	"github.com/agent-guide/caddy-llm/gateway"
+	configstoreintf "github.com/agent-guide/caddy-llm/llm/configstore/intf"
 	"github.com/cloudwego/eino/schema"
+	"gorm.io/gorm"
 
 	"github.com/agent-guide/caddy-llm/llm/authmanager/credential"
 	"github.com/agent-guide/caddy-llm/llm/authmanager/manager"
 	"github.com/agent-guide/caddy-llm/llm/provider"
 )
+
+func init() {
+	provider.RegisterProvider("testdynamic", func(cfg provider.ProviderConfig) (provider.Provider, error) {
+		message, _ := cfg.Options["message"].(string)
+		return &testProvider{
+			generateResp: &provider.GenerateResponse{
+				Message: &schema.Message{Role: schema.RoleType("assistant"), Content: message},
+			},
+		}, nil
+	})
+}
 
 type testProvider struct {
 	generateResp *provider.GenerateResponse
@@ -44,6 +60,10 @@ func (p *testProvider) Capabilities() provider.ProviderCapabilities {
 	return provider.ProviderCapabilities{Streaming: true}
 }
 
+func (p *testProvider) Config() provider.ProviderConfig {
+	return provider.ProviderConfig{}
+}
+
 type testStatusError struct {
 	msg    string
 	status int
@@ -51,6 +71,176 @@ type testStatusError struct {
 
 func (e testStatusError) Error() string   { return e.msg }
 func (e testStatusError) StatusCode() int { return e.status }
+
+func newSeededHandler(authMgr *manager.Manager, prov provider.Provider) *Handler {
+	handler := NewHandler()
+	initGatewayForTests(nil, gateway.NewStaticProviderResolver(func(name string) (provider.Provider, bool) {
+		if name != "openai" || prov == nil {
+			return nil, false
+		}
+		return prov, true
+	}), nil, authMgr, nil)
+	handler.RouteID = "openai-test-route"
+	gateway.GlobalAgentGateway().EnsureRoute(gateway.Route{
+		ID:   handler.RouteID,
+		Name: handler.RouteID,
+		Targets: []gateway.RouteTarget{{
+			ProviderRef: "openai",
+			Mode:        gateway.TargetModeWeighted,
+			Weight:      1,
+		}},
+	})
+	return handler
+}
+
+func initGatewayForTests(routeLoader gateway.RouteLoader, providerResolver gateway.ProviderResolver, localAPIKeyStore configstoreintf.LocalAPIKeyStorer, authMgr *manager.Manager, selector gateway.RouteSelector) {
+	gateway.ResetGlobalAgentGateway().Configure(routeLoader, providerResolver, localAPIKeyStore, authMgr, selector)
+}
+
+type testLocalAPIKeyStore struct {
+	items map[string]*gateway.LocalAPIKey
+}
+
+func (s *testLocalAPIKeyStore) List(context.Context) ([]any, error) { return nil, nil }
+func (s *testLocalAPIKeyStore) Save(_ context.Context, key string, obj any) error {
+	item, ok := obj.(*gateway.LocalAPIKey)
+	if !ok {
+		return errors.New("unexpected type")
+	}
+	if s.items == nil {
+		s.items = map[string]*gateway.LocalAPIKey{}
+	}
+	cloned := *item
+	s.items[key] = &cloned
+	return nil
+}
+func (s *testLocalAPIKeyStore) Delete(context.Context, string) error { return nil }
+func (s *testLocalAPIKeyStore) Get(_ context.Context, key string) (any, error) {
+	item, ok := s.items[key]
+	if !ok {
+		return nil, errors.New("not found")
+	}
+	return item, nil
+}
+
+type testProviderConfigStore struct {
+	items map[string]map[string]any
+}
+
+func (s *testProviderConfigStore) ListByName(_ context.Context, name string) ([]any, error) {
+	out := make([]any, 0, len(s.items))
+	for _, item := range s.items {
+		if name == "" || item["tag"] == name {
+			out = append(out, item)
+		}
+	}
+	return out, nil
+}
+
+func (s *testProviderConfigStore) Save(_ context.Context, id string, name string, obj any) (string, error) {
+	if s.items == nil {
+		s.items = map[string]map[string]any{}
+	}
+	cfg, _ := obj.(map[string]any)
+	if cfg == nil {
+		cfg = map[string]any{}
+	}
+	cloned := map[string]any{"id": id, "tag": name, "config": cfg}
+	s.items[id] = cloned
+	return id, nil
+}
+
+func (s *testProviderConfigStore) Update(ctx context.Context, id string, obj any) error {
+	item, ok := s.items[id]
+	if !ok {
+		return gorm.ErrRecordNotFound
+	}
+	cfg, _ := obj.(map[string]any)
+	if cfg == nil {
+		cfg = map[string]any{}
+	}
+	item["config"] = cfg
+	s.items[id] = item
+	return nil
+}
+
+func (s *testProviderConfigStore) Delete(_ context.Context, id string) error {
+	delete(s.items, id)
+	return nil
+}
+
+func (s *testProviderConfigStore) Get(_ context.Context, id string) (string, any, error) {
+	item, ok := s.items[id]
+	if !ok {
+		return "", nil, gorm.ErrRecordNotFound
+	}
+	tag, _ := item["tag"].(string)
+	return tag, item["config"], nil
+}
+
+type testRouteStore struct {
+	items map[string]*gateway.Route
+}
+
+func (s *testRouteStore) List(context.Context) ([]any, error) {
+	out := make([]any, 0, len(s.items))
+	for _, item := range s.items {
+		out = append(out, item)
+	}
+	return out, nil
+}
+
+func (s *testRouteStore) Save(_ context.Context, id string, obj any) error {
+	route, ok := obj.(*gateway.Route)
+	if !ok {
+		return errors.New("unexpected type")
+	}
+	if s.items == nil {
+		s.items = map[string]*gateway.Route{}
+	}
+	cloned := *route
+	s.items[id] = &cloned
+	return nil
+}
+
+func (s *testRouteStore) Update(ctx context.Context, id string, obj any) error {
+	if _, ok := s.items[id]; !ok {
+		return gorm.ErrRecordNotFound
+	}
+	return s.Save(ctx, id, obj)
+}
+
+func (s *testRouteStore) Delete(_ context.Context, id string) error {
+	delete(s.items, id)
+	return nil
+}
+
+func (s *testRouteStore) Get(_ context.Context, id string) (any, error) {
+	item, ok := s.items[id]
+	if !ok {
+		return nil, gorm.ErrRecordNotFound
+	}
+	return item, nil
+}
+
+type integrationConfigStore struct {
+	providerStore    configstoreintf.ProviderConfigStorer
+	routeStore       configstoreintf.RouteStorer
+	localAPIKeyStore configstoreintf.LocalAPIKeyStorer
+}
+
+func (s *integrationConfigStore) GetCredentialStore(context.Context, configstoreintf.ConfigObjectDecoder) (configstoreintf.CredentialStorer, error) {
+	return nil, nil
+}
+func (s *integrationConfigStore) GetProviderConfigStore() configstoreintf.ProviderConfigStorer {
+	return s.providerStore
+}
+func (s *integrationConfigStore) GetLocalAPIKeyStore(context.Context, configstoreintf.ConfigObjectDecoder) (configstoreintf.LocalAPIKeyStorer, error) {
+	return s.localAPIKeyStore, nil
+}
+func (s *integrationConfigStore) GetRouteStore(context.Context, configstoreintf.ConfigObjectDecoder) (configstoreintf.RouteStorer, error) {
+	return s.routeStore, nil
+}
 
 func TestServeLLMApiMarksOpenAIStreamFailures(t *testing.T) {
 	authMgr := manager.NewManager(nil, nil, nil)
@@ -61,7 +251,7 @@ func TestServeLLMApiMarksOpenAIStreamFailures(t *testing.T) {
 		t.Fatalf("register credential: %v", err)
 	}
 
-	handler := NewHandler(authMgr, &testProvider{
+	handler := newSeededHandler(authMgr, &testProvider{
 		streamErr: testStatusError{msg: "rate limit", status: http.StatusTooManyRequests},
 	})
 
@@ -148,7 +338,7 @@ func TestServeLLMApiReturnsChatCompletionResponse(t *testing.T) {
 		t.Fatalf("register credential: %v", err)
 	}
 
-	handler := NewHandler(authMgr, prov)
+	handler := newSeededHandler(authMgr, prov)
 
 	body, err := json.Marshal(ChatCompletionRequest{
 		Model: "gpt-4o-mini",
@@ -227,7 +417,7 @@ func TestServeLLMApiStreamsOpenAIChunks(t *testing.T) {
 		t.Fatalf("register credential: %v", err)
 	}
 
-	handler := NewHandler(authMgr, prov)
+	handler := newSeededHandler(authMgr, prov)
 
 	body, err := json.Marshal(ChatCompletionRequest{
 		Model:  "gpt-4o-mini",
@@ -288,6 +478,412 @@ func TestServeLLMApiStreamsOpenAIChunks(t *testing.T) {
 	}
 	if chunk.Choices[0].FinishReason != "stop" {
 		t.Fatalf("unexpected finish reason: got %q want %q", chunk.Choices[0].FinishReason, "stop")
+	}
+}
+
+func TestServeLLMApiRequiresLocalAPIKeyWhenRouteRequiresIt(t *testing.T) {
+	handler := NewHandler()
+	initGatewayForTests(nil, gateway.NewStaticProviderResolver(func(name string) (provider.Provider, bool) {
+		if name == "openai" {
+			return &testProvider{}, true
+		}
+		return nil, false
+	}), nil, nil, nil)
+	handler.RouteID = "openai-test-route"
+	gateway.GlobalAgentGateway().EnsureRoute(gateway.Route{
+		ID:      handler.RouteID,
+		Name:    handler.RouteID,
+		Targets: []gateway.RouteTarget{{ProviderRef: "openai", Mode: gateway.TargetModeWeighted, Weight: 1}},
+		Policy: gateway.RoutePolicy{
+			Auth: gateway.AuthPolicy{RequireLocalAPIKey: true},
+		},
+	})
+
+	body, err := json.Marshal(ChatCompletionRequest{
+		Model: "gpt-4o-mini",
+		Messages: []ChatMessage{{
+			Role:    "user",
+			Content: "hello",
+		}},
+	})
+	if err != nil {
+		t.Fatalf("marshal request: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", bytes.NewReader(body))
+	rec := httptest.NewRecorder()
+
+	if err := handler.ServeLLMApi(rec, req); err != nil {
+		t.Fatalf("ServeLLMApi returned error: %v", err)
+	}
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("unexpected status code: got %d want %d", rec.Code, http.StatusUnauthorized)
+	}
+}
+
+func TestServeLLMApiRoutesViaLocalAPIKeyAndRouteTarget(t *testing.T) {
+	openAIProv := &testProvider{}
+	openRouterProv := &testProvider{
+		generateResp: &provider.GenerateResponse{
+			Message: &schema.Message{
+				Role:    schema.RoleType("assistant"),
+				Content: "routed via openrouter",
+			},
+		},
+	}
+
+	handler := NewHandler()
+	initGatewayForTests(nil, gateway.NewStaticProviderResolver(func(name string) (provider.Provider, bool) {
+		switch name {
+		case "openai":
+			return openAIProv, true
+		case "openrouter":
+			return openRouterProv, true
+		default:
+			return nil, false
+		}
+	}), &testLocalAPIKeyStore{
+		items: map[string]*gateway.LocalAPIKey{
+			"local-test-key": {
+				Key:             "local-test-key",
+				AllowedRouteIDs: []string{"chat-prod"},
+			},
+		},
+	}, nil, nil)
+	handler.RouteID = "chat-prod"
+	gateway.GlobalAgentGateway().EnsureRoute(gateway.Route{
+		ID:   "chat-prod",
+		Name: "chat-prod",
+		Targets: []gateway.RouteTarget{{
+			ProviderRef: "openrouter",
+			Mode:        gateway.TargetModeWeighted,
+			Weight:      1,
+		}},
+	})
+
+	body, err := json.Marshal(ChatCompletionRequest{
+		Model: "gpt-4o-mini",
+		Messages: []ChatMessage{{
+			Role:    "user",
+			Content: "hello",
+		}},
+	})
+	if err != nil {
+		t.Fatalf("marshal request: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", bytes.NewReader(body))
+	req.Header.Set("x-api-key", "local-test-key")
+	rec := httptest.NewRecorder()
+
+	if err := handler.ServeLLMApi(rec, req); err != nil {
+		t.Fatalf("ServeLLMApi returned error: %v", err)
+	}
+	if rec.Code != http.StatusOK {
+		t.Fatalf("unexpected status code: got %d want %d", rec.Code, http.StatusOK)
+	}
+	if openAIProv.lastGenerateReq != nil {
+		t.Fatal("expected openai provider not to be called")
+	}
+	if openRouterProv.lastGenerateReq == nil {
+		t.Fatal("expected openrouter provider to be called")
+	}
+}
+
+func TestServeLLMApiReloadsRouteTargetsPerRequest(t *testing.T) {
+	openAIProv := &testProvider{
+		generateResp: &provider.GenerateResponse{
+			Message: &schema.Message{Role: schema.RoleType("assistant"), Content: "from openai"},
+		},
+	}
+	openRouterProv := &testProvider{
+		generateResp: &provider.GenerateResponse{
+			Message: &schema.Message{Role: schema.RoleType("assistant"), Content: "from openrouter"},
+		},
+	}
+
+	currentRoute := &gateway.Route{
+		ID:   "chat-prod",
+		Name: "chat-prod",
+		Targets: []gateway.RouteTarget{{
+			ProviderRef: "openai",
+			Mode:        gateway.TargetModeWeighted,
+			Weight:      1,
+		}},
+	}
+
+	handler := NewHandler()
+	initGatewayForTests(func(context.Context, string) (*gateway.Route, error) {
+		return currentRoute, nil
+	}, gateway.NewStaticProviderResolver(func(name string) (provider.Provider, bool) {
+		switch name {
+		case "openai":
+			return openAIProv, true
+		case "openrouter":
+			return openRouterProv, true
+		default:
+			return nil, false
+		}
+	}), &testLocalAPIKeyStore{
+		items: map[string]*gateway.LocalAPIKey{
+			"local-test-key": {
+				Key:             "local-test-key",
+				AllowedRouteIDs: []string{"chat-prod"},
+			},
+		},
+	}, nil, nil)
+	handler.RouteID = "chat-prod"
+	gateway.GlobalAgentGateway().EnsureRoute(*currentRoute)
+
+	makeReq := func() *httptest.ResponseRecorder {
+		body, err := json.Marshal(ChatCompletionRequest{
+			Model: "gpt-4o-mini",
+			Messages: []ChatMessage{{
+				Role:    "user",
+				Content: "hello",
+			}},
+		})
+		if err != nil {
+			t.Fatalf("marshal request: %v", err)
+		}
+		req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", bytes.NewReader(body))
+		req.Header.Set("x-api-key", "local-test-key")
+		rec := httptest.NewRecorder()
+		if err := handler.ServeLLMApi(rec, req); err != nil {
+			t.Fatalf("ServeLLMApi returned error: %v", err)
+		}
+		return rec
+	}
+
+	rec := makeReq()
+	if rec.Code != http.StatusOK {
+		t.Fatalf("unexpected first status: got %d want %d", rec.Code, http.StatusOK)
+	}
+	if openAIProv.lastGenerateReq == nil {
+		t.Fatal("expected first request to use openai provider")
+	}
+	if openRouterProv.lastGenerateReq != nil {
+		t.Fatal("expected openrouter provider not to be called yet")
+	}
+
+	currentRoute = &gateway.Route{
+		ID:   "chat-prod",
+		Name: "chat-prod",
+		Targets: []gateway.RouteTarget{{
+			ProviderRef: "openrouter",
+			Mode:        gateway.TargetModeWeighted,
+			Weight:      1,
+		}},
+	}
+
+	rec = makeReq()
+	if rec.Code != http.StatusOK {
+		t.Fatalf("unexpected second status: got %d want %d", rec.Code, http.StatusOK)
+	}
+	if openRouterProv.lastGenerateReq == nil {
+		t.Fatal("expected second request to use refreshed openrouter provider")
+	}
+}
+
+func TestAdminProvisionedRouteAndLocalAPIKeyDriveOpenAIHandler(t *testing.T) {
+	openRouterProv := &testProvider{
+		generateResp: &provider.GenerateResponse{
+			Message: &schema.Message{Role: schema.RoleType("assistant"), Content: "from openrouter"},
+		},
+	}
+
+	cfgStore := &integrationConfigStore{
+		providerStore:    &testProviderConfigStore{items: map[string]map[string]any{}},
+		routeStore:       &testRouteStore{items: map[string]*gateway.Route{}},
+		localAPIKeyStore: &testLocalAPIKeyStore{items: map[string]*gateway.LocalAPIKey{}},
+	}
+	adminHandler := admin.NewHandler(nil, cfgStore, nil)
+
+	postJSON := func(path string, body any) {
+		t.Helper()
+		data, err := json.Marshal(body)
+		if err != nil {
+			t.Fatalf("marshal body for %s: %v", path, err)
+		}
+		req := httptest.NewRequest(http.MethodPost, path, bytes.NewReader(data))
+		rec := httptest.NewRecorder()
+		adminHandler.ServeHTTP(rec, req)
+		if rec.Code != http.StatusCreated {
+			t.Fatalf("POST %s status = %d body=%s", path, rec.Code, rec.Body.String())
+		}
+	}
+
+	postJSON("/admin/providers", map[string]any{
+		"id":  "openrouter",
+		"tag": "openrouter",
+		"config": map[string]any{
+			"base_url": "https://openrouter.example",
+		},
+	})
+	postJSON("/admin/routes", gateway.Route{
+		ID:   "chat-prod",
+		Name: "chat-prod",
+		Targets: []gateway.RouteTarget{{
+			ProviderRef: "openrouter",
+			Mode:        gateway.TargetModeWeighted,
+			Weight:      1,
+		}},
+		Policy: gateway.RoutePolicy{
+			Auth: gateway.AuthPolicy{RequireLocalAPIKey: true},
+		},
+	})
+	postJSON("/admin/local_api_keys", gateway.LocalAPIKey{
+		Key:             "lk-e2e",
+		AllowedRouteIDs: []string{"chat-prod"},
+	})
+
+	handler := NewHandler()
+	initGatewayForTests(func(ctx context.Context, routeID string) (*gateway.Route, error) {
+		item, err := cfgStore.routeStore.Get(ctx, routeID)
+		if err != nil {
+			return nil, err
+		}
+		route, ok := item.(*gateway.Route)
+		if !ok {
+			return nil, errors.New("unexpected route type")
+		}
+		return route, nil
+	}, gateway.NewStaticProviderResolver(func(name string) (provider.Provider, bool) {
+		if name == "openrouter" {
+			return openRouterProv, true
+		}
+		return nil, false
+	}), cfgStore.localAPIKeyStore, nil, nil)
+	handler.RouteID = "chat-prod"
+
+	body, err := json.Marshal(ChatCompletionRequest{
+		Model: "gpt-4o-mini",
+		Messages: []ChatMessage{{
+			Role:    "user",
+			Content: "hello",
+		}},
+	})
+	if err != nil {
+		t.Fatalf("marshal request: %v", err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", bytes.NewReader(body))
+	req.Header.Set("x-api-key", "lk-e2e")
+	rec := httptest.NewRecorder()
+
+	if err := handler.ServeLLMApi(rec, req); err != nil {
+		t.Fatalf("ServeLLMApi returned error: %v", err)
+	}
+	if rec.Code != http.StatusOK {
+		t.Fatalf("unexpected status code: got %d want %d", rec.Code, http.StatusOK)
+	}
+	if openRouterProv.lastGenerateReq == nil {
+		t.Fatal("expected request to be routed to provider created through admin")
+	}
+}
+
+func TestServeLLMApiReloadsProviderConfigPerRequest(t *testing.T) {
+	cfgStore := &integrationConfigStore{
+		providerStore: &testProviderConfigStore{items: map[string]map[string]any{
+			"dyn-provider": {
+				"id":  "dyn-provider",
+				"tag": "testdynamic",
+				"config": map[string]any{
+					"name": "testdynamic",
+					"options": map[string]any{
+						"message": "first provider version",
+					},
+				},
+			},
+		}},
+		routeStore: &testRouteStore{items: map[string]*gateway.Route{
+			"chat-prod": {
+				ID:   "chat-prod",
+				Name: "chat-prod",
+				Targets: []gateway.RouteTarget{{
+					ProviderRef: "dyn-provider",
+					Mode:        gateway.TargetModeWeighted,
+					Weight:      1,
+				}},
+				Policy: gateway.RoutePolicy{
+					Auth: gateway.AuthPolicy{RequireLocalAPIKey: true},
+				},
+			},
+		}},
+		localAPIKeyStore: &testLocalAPIKeyStore{items: map[string]*gateway.LocalAPIKey{
+			"lk-dynamic": {
+				Key:             "lk-dynamic",
+				AllowedRouteIDs: []string{"chat-prod"},
+			},
+		}},
+	}
+
+	handler := NewHandler()
+	initGatewayForTests(func(ctx context.Context, routeID string) (*gateway.Route, error) {
+		item, err := cfgStore.routeStore.Get(ctx, routeID)
+		if err != nil {
+			return nil, err
+		}
+		route, _ := item.(*gateway.Route)
+		return route, nil
+	}, gateway.ProviderResolverFunc(func(ctx context.Context, ref string) (provider.Provider, string, error) {
+		tag, obj, err := cfgStore.providerStore.Get(ctx, ref)
+		if err != nil {
+			return nil, "", err
+		}
+		cfg, err := provider.DecodeStoredProviderConfig(tag, obj)
+		if err != nil {
+			return nil, "", err
+		}
+		prov, err := provider.NewProvider(cfg)
+		if err != nil {
+			return nil, "", err
+		}
+		return prov, cfg.Name, nil
+	}), cfgStore.localAPIKeyStore, nil, nil)
+	handler.RouteID = "chat-prod"
+
+	makeReq := func() ChatCompletionResponse {
+		body, err := json.Marshal(ChatCompletionRequest{
+			Model: "gpt-4o-mini",
+			Messages: []ChatMessage{{
+				Role:    "user",
+				Content: "hello",
+			}},
+		})
+		if err != nil {
+			t.Fatalf("marshal request: %v", err)
+		}
+		req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", bytes.NewReader(body))
+		req.Header.Set("x-api-key", "lk-dynamic")
+		rec := httptest.NewRecorder()
+		if err := handler.ServeLLMApi(rec, req); err != nil {
+			t.Fatalf("ServeLLMApi returned error: %v", err)
+		}
+		if rec.Code != http.StatusOK {
+			t.Fatalf("unexpected status code: got %d want %d body=%s", rec.Code, http.StatusOK, rec.Body.String())
+		}
+		var resp ChatCompletionResponse
+		if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+			t.Fatalf("unmarshal response: %v", err)
+		}
+		return resp
+	}
+
+	resp := makeReq()
+	if resp.Choices[0].Message.Content != "first provider version" {
+		t.Fatalf("unexpected first content: %q", resp.Choices[0].Message.Content)
+	}
+
+	cfgStore.providerStore.(*testProviderConfigStore).items["dyn-provider"]["config"] = map[string]any{
+		"name": "testdynamic",
+		"options": map[string]any{
+			"message": "second provider version",
+		},
+	}
+
+	resp = makeReq()
+	if resp.Choices[0].Message.Content != "second provider version" {
+		t.Fatalf("unexpected second content: %q", resp.Choices[0].Message.Content)
 	}
 }
 

@@ -12,4 +12,6 @@ type ConfigStorer interface {
 	GetProviderConfigStore() ProviderConfigStorer
 
 	GetLocalAPIKeyStore(ctx context.Context, decodeLocalAPIKey ConfigObjectDecoder) (LocalAPIKeyStorer, error)
+
+	GetRouteStore(ctx context.Context, decodeRoute ConfigObjectDecoder) (RouteStorer, error)
 }

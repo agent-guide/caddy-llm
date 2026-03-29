@@ -36,6 +36,7 @@ The `llm` app module is the runtime backbone of the project. It provisions the c
 ### API Compatibility Layer
 
 The `handle_llm_api` HTTP handler routes incoming requests to compatible API modules. The repository currently includes OpenAI-compatible and Anthropic-compatible handler implementations, allowing clients to keep familiar API shapes while the gateway controls upstream provider access.
+`handle_llm_api` only binds an API-compatible handler to a `route_id`. Route-level gateway policy is declared centrally with `agent_gateway_route`, including `require_local_api_key`, `allowed_model`, and `target <provider> [weight]`.
 
 ### Provider System
 
@@ -49,7 +50,8 @@ The gateway includes a credential manager with persistence, selection, status tr
 
 The default config store is backed by SQLite. It persists credentials, provider configuration, local gateway API keys, and related gateway state, giving the project a practical default for local development and self-hosted deployments while leaving room for additional backends later.
 
-`LocalAPIKey` is the stored object used for agent-to-gateway authentication. Each record binds a gateway-issued `local_key` to the upstream access information needed for later requests, including the target provider, direct upstream `api_key`, or a set of CLI-managed `credential_ids`.
+`LocalAPIKey` is the stored object used for agent-to-gateway authentication. It represents the caller's identity and authorization scope at the gateway layer, such as which routes the caller may access and which route-level policies apply.
+The canonical types now live in the `gateway/` package, while the config store decoder keeps backward compatibility with older stored records.
 
 ### MCP, Memory, and Agent Runtime
 
@@ -121,17 +123,32 @@ Authenticators are configuration-driven now: if you do not declare an `authentic
 localhost:8082 {
     route /v1/* {
         handle_llm_api openai {
-            provider openai
+            route_id openai-chat
+        }
+        handle_llm_api anthropic {
+            route_id anthropic-messages
         }
 
-        handle_llm_api anthropic {
-            provider anthropic
+        agent_gateway_route openai-chat {
+            require_local_api_key
+            allowed_model gpt-4.1
+            allowed_model gpt-4.1-mini
+            target openai 80
+            target openrouter 20
+        }
+
+        agent_gateway_route anthropic-messages {
+            require_local_api_key
+            target anthropic
         }
 
         # openai-compatible ingress backed by a different provider:
         # handle_llm_api openai {
-        #     provider openrouter
-        }
+        #     route_id openai-via-openrouter
+        # }
+        # agent_gateway_route openai-via-openrouter {
+        #     target openrouter
+        # }
     }
 
     route /admin/* {
@@ -140,4 +157,74 @@ localhost:8082 {
 }
 ```
 
-Custom providers can be added by shipping a Caddy module under `llm.providers.<name>` that implements the shared `provider.Provider` interface. Once the module is linked into the Caddy build, it can be mounted with `provider <name> { ... }` inside the global `llm` block and referenced from `handle_llm_api <api> { provider <name> }`.
+Custom providers can be added by shipping a Caddy module under `llm.providers.<name>` that implements the shared `provider.Provider` interface. Once the module is linked into the Caddy build, it can be mounted with `provider <name> { ... }` inside the global `llm` block and referenced from `agent_gateway_route <route_id> { target <name> }`.
+
+## Admin API Examples
+
+The admin API can now manage `provider`, `route`, and `local_api_key` resources directly. If a handler is configured with `route_id`, the runtime reloads the latest persisted route definition on each request. Target providers are also resolved from the latest stored provider config when available, so route and provider updates take effect without rebuilding the Caddy config.
+
+Create a provider record:
+
+```bash
+curl -X POST http://localhost:8082/admin/providers \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "id": "openrouter",
+    "tag": "openrouter",
+    "config": {
+      "base_url": "https://openrouter.ai/api/v1",
+      "default_model": "openai/gpt-4o-mini"
+    }
+  }'
+```
+
+Create a route record:
+
+```bash
+curl -X POST http://localhost:8082/admin/routes \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "id": "chat-prod",
+    "name": "chat-prod",
+    "dialect": "openai",
+    "targets": [
+      { "provider_ref": "openrouter", "mode": "weighted", "weight": 1 }
+    ],
+    "policy": {
+      "auth": { "require_local_api_key": true },
+      "allowed_models": ["gpt-4o-mini"]
+    }
+  }'
+```
+
+Create a local API key:
+
+```bash
+curl -X POST http://localhost:8082/admin/local_api_keys \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "key": "lk-demo",
+    "name": "demo key",
+    "allowed_route_ids": ["chat-prod"]
+  }'
+```
+
+Use the route from a handler:
+
+```caddy
+handle_llm_api openai {
+    route_id chat-prod
+}
+```
+
+Call the gateway with the local API key:
+
+```bash
+curl http://localhost:8082/v1/chat/completions \
+  -H 'Content-Type: application/json' \
+  -H 'x-api-key: lk-demo' \
+  -d '{
+    "model": "gpt-4o-mini",
+    "messages": [{"role": "user", "content": "hello"}]
+  }'
+```
