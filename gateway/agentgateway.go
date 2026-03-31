@@ -6,9 +6,9 @@ import (
 	"net/http"
 	"sync"
 
-	"github.com/agent-guide/caddy-llm/llm/authmanager/manager"
-	configstoreintf "github.com/agent-guide/caddy-llm/llm/configstore/intf"
-	"github.com/agent-guide/caddy-llm/llm/provider"
+	"github.com/agent-guide/caddy-agent-gateway/llm/authmanager/manager"
+	configstoreintf "github.com/agent-guide/caddy-agent-gateway/llm/configstore/intf"
+	"github.com/agent-guide/caddy-agent-gateway/llm/provider"
 )
 
 type AgentGateway struct {

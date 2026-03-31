@@ -18,7 +18,7 @@ Build an AI Gateway based on Caddy to provide AI Agent developers with:
 
 ### 1.3 Module Hierarchy
 ```
-caddy-llm/
+caddy-agent-gateway/
 ├── llm  (Caddy App Module)
 │   ├── provider  - LLM Provider management
 │   ├── mcp       - MCP protocol support
@@ -895,7 +895,7 @@ func (t *Tracer) StartToolSpan(ctx context.Context, toolName string) (context.Co
 Legend: ✅ implemented · 🔧 skeleton/stub · 📋 planned
 
 ```
-caddy-llm/
+caddy-agent-gateway/
 ├── cmd/
 │   └── main.go                      # Entry point ✅
 │

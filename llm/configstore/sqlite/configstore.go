@@ -12,7 +12,7 @@ import (
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 
-	"github.com/agent-guide/caddy-llm/llm/configstore/intf"
+	"github.com/agent-guide/caddy-agent-gateway/llm/configstore/intf"
 )
 
 type SQLiteConfigStore struct {
@@ -42,7 +42,7 @@ func (s *SQLiteConfigStore) Provision(ctx caddy.Context) error {
 
 	dbPath := s.SQLitePath
 	if dbPath == "" {
-		dbPath = filepath.Join(caddy.AppDataDir(), "caddy-llm", "configstore.db")
+		dbPath = filepath.Join(caddy.AppDataDir(), "caddy-agent-gateway", "configstore.db")
 		s.SQLitePath = dbPath
 	}
 

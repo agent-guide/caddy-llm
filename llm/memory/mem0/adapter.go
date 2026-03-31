@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/agent-guide/caddy-llm/llm/memory"
+	"github.com/agent-guide/caddy-agent-gateway/llm/memory"
 )
 
 // Adapter adapts the Mem0 API to the MemoryStore interface.

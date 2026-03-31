@@ -20,7 +20,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/agent-guide/caddy-llm/llm/authmanager/credential"
+	"github.com/agent-guide/caddy-agent-gateway/llm/authmanager/credential"
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 	"github.com/google/uuid"

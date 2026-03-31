@@ -9,7 +9,7 @@ import (
 	"github.com/caddyserver/caddy/v2/caddyconfig/httpcaddyfile"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 
-	llm "github.com/agent-guide/caddy-llm/llm"
+	llm "github.com/agent-guide/caddy-agent-gateway/llm"
 )
 
 func init() {

@@ -3,7 +3,7 @@
 .PHONY: all build build-xcaddy clean deps fmt
 
 # Binary name
-BINARY_NAME=caddy-llm
+BINARY_NAME=caddy-agent-gateway
 
 # Go parameters
 GOCMD=go
@@ -23,7 +23,7 @@ build:
 
 build-xcaddy:
 	@echo "Buiding with xcaddy..."
-	XCADDY_DEBUG=1 $(XCADDY) build --with github.com/agent-guide/caddy-llm=$(shell pwd)
+	XCADDY_DEBUG=1 $(XCADDY) build --with github.com/agent-guide/caddy-agent-gateway=$(shell pwd)
 
 # Clean build artifacts
 clean:

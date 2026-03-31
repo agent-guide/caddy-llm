@@ -5,13 +5,13 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/agent-guide/caddy-llm/gateway"
+	"github.com/agent-guide/caddy-agent-gateway/gateway"
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/httpcaddyfile"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 )
 
-const caddyfileStateKey = "agent-guide/caddy-llm/api"
+const caddyfileStateKey = "agent-guide/caddy-agent-gateway/api"
 
 func init() {
 	httpcaddyfile.RegisterHandlerDirective("handle_llm_api", parseHandleLLMAPI)

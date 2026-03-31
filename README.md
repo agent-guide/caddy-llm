@@ -1,10 +1,10 @@
-# caddy-llm
+# caddy-agent-gateway
 
-`caddy-llm` is a Caddy-native gateway for building and operating AI agents. It sits between agent runtimes and upstream model providers, exposing compatible LLM APIs while centralizing provider access, credential management, configuration storage, and operational control behind Caddy's module system.
+`caddy-agent-gateway` is a Caddy-native gateway for building and operating AI agents. It sits between agent runtimes and upstream model providers, exposing compatible LLM APIs while centralizing provider access, credential management, configuration storage, and operational control behind Caddy's module system.
 
 The project is designed to make agent infrastructure easier to extend and easier to run in production. Instead of wiring provider clients, CLI logins, API compatibility layers, and admin endpoints directly into each agent application, developers can move those concerns into the gateway and reuse Caddy's configuration model, HTTP pipeline, and ecosystem.
 
-The broader architecture also includes MCP, memory, and agent-oriented modules. Part of that surface is already implemented in the repository, while part is still being wired into the runtime and admin flows. This makes `caddy-llm` both a usable LLM gateway today and a foundation for a more complete AI agent gateway on top of the Caddy ecosystem.
+The broader architecture also includes MCP, memory, and agent-oriented modules. Part of that surface is already implemented in the repository, while part is still being wired into the runtime and admin flows. This makes `caddy-agent-gateway` both a usable LLM gateway today and a foundation for a more complete AI agent gateway on top of the Caddy ecosystem.
 
 ## Features
 
@@ -61,7 +61,7 @@ The repository already defines dedicated modules for MCP integration, memory sto
 
 What is already usable:
 
-- Running `caddy-llm` as a Caddy-based LLM gateway with a shared `llm` app module.
+- Running `caddy-agent-gateway` as a Caddy-based LLM gateway with a shared `llm` app module.
 - Exposing compatible HTTP endpoints through `handle_llm_api`.
 - Using the Admin API for health, provider config CRUD, credential listing, credential lookup, and CLI login flows.
 - Registering and extending providers and authenticators through Caddy modules and Go interfaces.
@@ -75,7 +75,7 @@ What is still in progress:
 
 ## Why Caddy
 
-Building on Caddy gives the project more than just an HTTP server. It provides a mature module system, flexible configuration loading, robust request handling, and a proven operational model. That makes `caddy-llm` a good fit for teams that want agent infrastructure to behave like gateway infrastructure: composable, inspectable, and maintainable.
+Building on Caddy gives the project more than just an HTTP server. It provides a mature module system, flexible configuration loading, robust request handling, and a proven operational model. That makes `caddy-agent-gateway` a good fit for teams that want agent infrastructure to behave like gateway infrastructure: composable, inspectable, and maintainable.
 
 ## Roadmap Direction
 
@@ -105,7 +105,7 @@ Authenticators are configuration-driven now: if you do not declare an `authentic
         }
 
         config_store sqlite {
-            path /var/lib/caddy/caddy-llm/configstore.db
+            path /var/lib/caddy/caddy-agent-gateway/configstore.db
         }
 
         authenticator codex {

@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/agent-guide/caddy-llm/llm/configstore/intf"
+	"github.com/agent-guide/caddy-agent-gateway/llm/configstore/intf"
 	"gorm.io/gorm"
 )
 

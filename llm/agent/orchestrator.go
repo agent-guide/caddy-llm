@@ -8,8 +8,8 @@ import (
 	einomodel "github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
 
-	"github.com/agent-guide/caddy-llm/llm/memory"
-	"github.com/agent-guide/caddy-llm/llm/provider"
+	"github.com/agent-guide/caddy-agent-gateway/llm/memory"
+	"github.com/agent-guide/caddy-agent-gateway/llm/provider"
 )
 
 // Orchestrator processes agent-mode requests, automatically calling

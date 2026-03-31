@@ -7,18 +7,18 @@ import (
 	_ "github.com/caddyserver/caddy/v2/modules/standard"
 
 	// LLM Gateway modules
-	_ "github.com/agent-guide/caddy-llm/admin"
-	_ "github.com/agent-guide/caddy-llm/api"
-	_ "github.com/agent-guide/caddy-llm/api/llmapi/anthropic"
-	_ "github.com/agent-guide/caddy-llm/api/llmapi/openai"
-	_ "github.com/agent-guide/caddy-llm/llm"
+	_ "github.com/agent-guide/caddy-agent-gateway/admin"
+	_ "github.com/agent-guide/caddy-agent-gateway/api"
+	_ "github.com/agent-guide/caddy-agent-gateway/api/llmapi/anthropic"
+	_ "github.com/agent-guide/caddy-agent-gateway/api/llmapi/openai"
+	_ "github.com/agent-guide/caddy-agent-gateway/llm"
 
 	// LLM Providers (register as factory + Caddy modules via init())
-	_ "github.com/agent-guide/caddy-llm/llm/provider/anthropic"
-	_ "github.com/agent-guide/caddy-llm/llm/provider/gemini"
-	_ "github.com/agent-guide/caddy-llm/llm/provider/ollama"
-	_ "github.com/agent-guide/caddy-llm/llm/provider/openai"
-	_ "github.com/agent-guide/caddy-llm/llm/provider/openrouter"
+	_ "github.com/agent-guide/caddy-agent-gateway/llm/provider/anthropic"
+	_ "github.com/agent-guide/caddy-agent-gateway/llm/provider/gemini"
+	_ "github.com/agent-guide/caddy-agent-gateway/llm/provider/ollama"
+	_ "github.com/agent-guide/caddy-agent-gateway/llm/provider/openai"
+	_ "github.com/agent-guide/caddy-agent-gateway/llm/provider/openrouter"
 )
 
 func main() {

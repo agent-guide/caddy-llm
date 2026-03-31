@@ -7,8 +7,8 @@ import (
 
 	"go.uber.org/zap"
 
-	"github.com/agent-guide/caddy-llm/llm/authmanager/manager"
-	"github.com/agent-guide/caddy-llm/llm/configstore/intf"
+	"github.com/agent-guide/caddy-agent-gateway/llm/authmanager/manager"
+	"github.com/agent-guide/caddy-agent-gateway/llm/configstore/intf"
 )
 
 // Handler handles Admin API requests under /admin/.

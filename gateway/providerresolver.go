@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/agent-guide/caddy-llm/llm/provider"
+	"github.com/agent-guide/caddy-agent-gateway/llm/provider"
 )
 
 // ProviderLookup resolves a statically provisioned provider instance by reference.

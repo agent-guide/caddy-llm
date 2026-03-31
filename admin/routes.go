@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/agent-guide/caddy-llm/gateway"
-	"github.com/agent-guide/caddy-llm/llm/configstore/intf"
+	"github.com/agent-guide/caddy-agent-gateway/gateway"
+	"github.com/agent-guide/caddy-agent-gateway/llm/configstore/intf"
 	"gorm.io/gorm"
 )
 

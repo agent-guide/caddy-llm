@@ -9,7 +9,7 @@ import (
 	"net/url"
 	"time"
 
-	"github.com/agent-guide/caddy-llm/llm/provider"
+	"github.com/agent-guide/caddy-agent-gateway/llm/provider"
 )
 
 // Base provides shared utilities for OpenAI-compatible providers.

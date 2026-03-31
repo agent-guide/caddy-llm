@@ -7,9 +7,9 @@ import (
 	"fmt"
 	"sync"
 
-	llm "github.com/agent-guide/caddy-llm/llm"
-	configstoreintf "github.com/agent-guide/caddy-llm/llm/configstore/intf"
-	"github.com/agent-guide/caddy-llm/llm/provider"
+	llm "github.com/agent-guide/caddy-agent-gateway/llm"
+	configstoreintf "github.com/agent-guide/caddy-agent-gateway/llm/configstore/intf"
+	"github.com/agent-guide/caddy-agent-gateway/llm/provider"
 )
 
 // cachedProviderEntry holds a cached provider instance and the config fingerprint

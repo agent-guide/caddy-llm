@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/agent-guide/caddy-llm/llm/authmanager/credential"
+	"github.com/agent-guide/caddy-agent-gateway/llm/authmanager/credential"
 )
 
 type stubAuthenticator struct {

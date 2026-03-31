@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/agent-guide/caddy-llm/llm/authmanager/credential"
-	"github.com/agent-guide/caddy-llm/llm/authmanager/manager"
+	"github.com/agent-guide/caddy-agent-gateway/llm/authmanager/credential"
+	"github.com/agent-guide/caddy-agent-gateway/llm/authmanager/manager"
 	"github.com/cloudwego/eino/schema"
 )
 

@@ -33,7 +33,7 @@ go.work.sum
 .env.local
 
 # Build output
-caddy-llm
+caddy-agent-gateway
 caddy
 dist/
 

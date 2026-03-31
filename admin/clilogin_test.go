@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/agent-guide/caddy-llm/llm/authmanager/credential"
-	"github.com/agent-guide/caddy-llm/llm/authmanager/manager"
+	"github.com/agent-guide/caddy-agent-gateway/llm/authmanager/credential"
+	"github.com/agent-guide/caddy-agent-gateway/llm/authmanager/manager"
 )
 
 type testAuthenticator struct {

@@ -11,8 +11,8 @@ import (
 	einomodel "github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
 
-	"github.com/agent-guide/caddy-llm/llm/provider"
-	"github.com/agent-guide/caddy-llm/llm/provider/openaibase"
+	"github.com/agent-guide/caddy-agent-gateway/llm/provider"
+	"github.com/agent-guide/caddy-agent-gateway/llm/provider/openaibase"
 )
 
 func init() {

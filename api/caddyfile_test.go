@@ -4,10 +4,10 @@ import (
 	"strings"
 	"testing"
 
-	api "github.com/agent-guide/caddy-llm/api"
-	_ "github.com/agent-guide/caddy-llm/api/llmapi/openai"
-	openaiapi "github.com/agent-guide/caddy-llm/api/llmapi/openai"
-	"github.com/agent-guide/caddy-llm/gateway"
+	api "github.com/agent-guide/caddy-agent-gateway/api"
+	_ "github.com/agent-guide/caddy-agent-gateway/api/llmapi/openai"
+	openaiapi "github.com/agent-guide/caddy-agent-gateway/api/llmapi/openai"
+	"github.com/agent-guide/caddy-agent-gateway/gateway"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 	"github.com/caddyserver/caddy/v2/caddyconfig/httpcaddyfile"
 )

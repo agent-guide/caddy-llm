@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/agent-guide/caddy-llm/llm/authmanager/credential"
+	"github.com/agent-guide/caddy-agent-gateway/llm/authmanager/credential"
 )
 
 // Selector chooses a credential candidate for a request.

@@ -4,7 +4,7 @@ import (
 	"errors"
 	"net/http"
 
-	"github.com/agent-guide/caddy-llm/gateway"
+	"github.com/agent-guide/caddy-agent-gateway/gateway"
 )
 
 // RouteIDAcceptor is implemented by handlers that accept a route id parsed from

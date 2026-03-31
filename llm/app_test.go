@@ -3,8 +3,8 @@ package llm
 import (
 	"testing"
 
-	"github.com/agent-guide/caddy-llm/llm/authmanager/authenticator"
-	"github.com/agent-guide/caddy-llm/llm/authmanager/manager"
+	"github.com/agent-guide/caddy-agent-gateway/llm/authmanager/authenticator"
+	"github.com/agent-guide/caddy-agent-gateway/llm/authmanager/manager"
 	"github.com/caddyserver/caddy/v2"
 )
 

@@ -9,8 +9,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/agent-guide/caddy-llm/gateway"
-	configstoreintf "github.com/agent-guide/caddy-llm/llm/configstore/intf"
+	"github.com/agent-guide/caddy-agent-gateway/gateway"
+	configstoreintf "github.com/agent-guide/caddy-agent-gateway/llm/configstore/intf"
 	"gorm.io/gorm"
 )
 

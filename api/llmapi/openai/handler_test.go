@@ -10,15 +10,15 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/agent-guide/caddy-llm/admin"
-	"github.com/agent-guide/caddy-llm/gateway"
-	configstoreintf "github.com/agent-guide/caddy-llm/llm/configstore/intf"
+	"github.com/agent-guide/caddy-agent-gateway/admin"
+	"github.com/agent-guide/caddy-agent-gateway/gateway"
+	configstoreintf "github.com/agent-guide/caddy-agent-gateway/llm/configstore/intf"
 	"github.com/cloudwego/eino/schema"
 	"gorm.io/gorm"
 
-	"github.com/agent-guide/caddy-llm/llm/authmanager/credential"
-	"github.com/agent-guide/caddy-llm/llm/authmanager/manager"
-	"github.com/agent-guide/caddy-llm/llm/provider"
+	"github.com/agent-guide/caddy-agent-gateway/llm/authmanager/credential"
+	"github.com/agent-guide/caddy-agent-gateway/llm/authmanager/manager"
+	"github.com/agent-guide/caddy-agent-gateway/llm/provider"
 )
 
 func init() {

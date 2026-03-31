@@ -8,11 +8,11 @@ import (
 	"github.com/caddyserver/caddy/v2/caddyconfig"
 	"go.uber.org/zap"
 
-	"github.com/agent-guide/caddy-llm/llm/authmanager/credential"
-	"github.com/agent-guide/caddy-llm/llm/authmanager/manager"
-	configstoreIntf "github.com/agent-guide/caddy-llm/llm/configstore/intf"
-	configstoresqlite "github.com/agent-guide/caddy-llm/llm/configstore/sqlite"
-	"github.com/agent-guide/caddy-llm/llm/provider"
+	"github.com/agent-guide/caddy-agent-gateway/llm/authmanager/credential"
+	"github.com/agent-guide/caddy-agent-gateway/llm/authmanager/manager"
+	configstoreIntf "github.com/agent-guide/caddy-agent-gateway/llm/configstore/intf"
+	configstoresqlite "github.com/agent-guide/caddy-agent-gateway/llm/configstore/sqlite"
+	"github.com/agent-guide/caddy-agent-gateway/llm/provider"
 )
 
 func init() {

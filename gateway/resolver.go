@@ -7,7 +7,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/agent-guide/caddy-llm/llm/provider"
+	"github.com/agent-guide/caddy-agent-gateway/llm/provider"
 )
 
 // RouteLoader resolves the latest persisted route definition for a route ID.
