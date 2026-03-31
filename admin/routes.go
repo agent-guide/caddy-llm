@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/agent-guide/caddy-agent-gateway/gateway"
+	routepkg "github.com/agent-guide/caddy-agent-gateway/gateway/route"
 	"github.com/agent-guide/caddy-agent-gateway/configstore/intf"
 	"gorm.io/gorm"
 )
@@ -219,7 +219,7 @@ func (h *Handler) handleCreateRoute(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var route gateway.Route
+	var route routepkg.Route
 	if err := decodeJSON(r, &route); err != nil {
 		writeError(w, http.StatusBadRequest, fmt.Sprintf("decode request: %v", err))
 		return
@@ -270,7 +270,7 @@ func (h *Handler) handleUpdateRoute(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var route gateway.Route
+	var route routepkg.Route
 	if err := decodeJSON(r, &route); err != nil {
 		writeError(w, http.StatusBadRequest, fmt.Sprintf("decode request: %v", err))
 		return
@@ -346,7 +346,7 @@ func (h *Handler) handleCreateLocalAPIKey(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	var key gateway.LocalAPIKey
+	var key routepkg.LocalAPIKey
 	if err := decodeJSON(r, &key); err != nil {
 		writeError(w, http.StatusBadRequest, fmt.Sprintf("decode request: %v", err))
 		return
@@ -389,7 +389,7 @@ func (h *Handler) handleUpdateLocalAPIKey(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	var key gateway.LocalAPIKey
+	var key routepkg.LocalAPIKey
 	if err := decodeJSON(r, &key); err != nil {
 		writeError(w, http.StatusBadRequest, fmt.Sprintf("decode request: %v", err))
 		return
@@ -534,7 +534,7 @@ func (h *Handler) routeStore() intf.RouteStorer {
 	if h.configStore == nil {
 		return nil
 	}
-	store, err := h.configStore.GetRouteStore(context.Background(), gateway.DecodeRoute)
+	store, err := h.configStore.GetRouteStore(context.Background(), routepkg.DecodeRoute)
 	if err != nil {
 		return nil
 	}
@@ -545,7 +545,7 @@ func (h *Handler) localAPIKeyStore() intf.LocalAPIKeyStorer {
 	if h.configStore == nil {
 		return nil
 	}
-	store, err := h.configStore.GetLocalAPIKeyStore(context.Background(), gateway.DecodeLocalAPIKey)
+	store, err := h.configStore.GetLocalAPIKeyStore(context.Background(), routepkg.DecodeLocalAPIKey)
 	if err != nil {
 		return nil
 	}

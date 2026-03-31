@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/agent-guide/caddy-agent-gateway/gateway"
+	routepkg "github.com/agent-guide/caddy-agent-gateway/gateway/route"
 	"github.com/cloudwego/eino/schema"
 
 	"github.com/agent-guide/caddy-agent-gateway/llm/authmanager/credential"
@@ -50,19 +51,21 @@ func (e testStatusError) StatusCode() int { return e.status }
 
 func newSeededHandler(authMgr *manager.Manager, prov provider.Provider) *Handler {
 	handler := NewHandler(prov)
-	gateway.ResetGlobalAgentGateway().Configure(nil, gateway.NewStaticProviderResolver(func(name string) (provider.Provider, bool) {
+	gw := gateway.NewAgentGateway()
+	gw.Configure(nil, gateway.NewStaticProviderResolver(func(name string) (provider.Provider, bool) {
 		if name != "anthropic" || prov == nil {
 			return nil, false
 		}
 		return prov, true
 	}), nil, authMgr, nil)
+	handler.SetAgentGateway(gw)
 	handler.RouteID = "anthropic-test-route"
-	gateway.GlobalAgentGateway().EnsureRoute(gateway.Route{
+	gw.EnsureRoute(routepkg.Route{
 		ID:   handler.RouteID,
 		Name: handler.RouteID,
-		Targets: []gateway.RouteTarget{{
+		Targets: []routepkg.RouteTarget{{
 			ProviderRef: "anthropic",
-			Mode:        gateway.TargetModeWeighted,
+			Mode:        routepkg.TargetModeWeighted,
 			Weight:      1,
 		}},
 	})

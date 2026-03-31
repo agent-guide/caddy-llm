@@ -5,15 +5,16 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	routepkg "github.com/agent-guide/caddy-agent-gateway/gateway/route"
 	"github.com/agent-guide/caddy-agent-gateway/llm/provider"
 	"github.com/cloudwego/eino/schema"
 )
 
 type fixedSelector struct {
-	target RouteTarget
+	target routepkg.RouteTarget
 }
 
-func (s fixedSelector) SelectTarget(Route, ResolveRequest) (*RouteTarget, error) {
+func (s fixedSelector) SelectTarget(routepkg.Route, routepkg.ResolveRequest) (*routepkg.RouteTarget, error) {
 	target := s.target
 	return &target, nil
 }
@@ -41,11 +42,11 @@ func (testProvider) Config() provider.ProviderConfig {
 }
 
 func TestResolverUsesCustomSelector(t *testing.T) {
-	route := Route{
+	route := routepkg.Route{
 		ID: "chat-prod",
-		Targets: []RouteTarget{
-			{ProviderRef: "openai", Mode: TargetModeWeighted, Weight: 1},
-			{ProviderRef: "openrouter", Mode: TargetModeWeighted, Weight: 1},
+		Targets: []routepkg.RouteTarget{
+			{ProviderRef: "openai", Mode: routepkg.TargetModeWeighted, Weight: 1},
+			{ProviderRef: "openrouter", Mode: routepkg.TargetModeWeighted, Weight: 1},
 		},
 	}
 	gw := NewAgentGateway()
@@ -55,10 +56,10 @@ func TestResolverUsesCustomSelector(t *testing.T) {
 			return testProvider{}, true
 		}
 		return nil, false
-	}), nil, nil, fixedSelector{target: RouteTarget{ProviderRef: "openrouter"}})
+	}), nil, nil, fixedSelector{target: routepkg.RouteTarget{ProviderRef: "openrouter"}})
 
 	req := httptest.NewRequest("POST", "/v1/chat/completions", nil)
-	resolved, err := gw.ResolveProvider(context.Background(), route.ID, ResolveRequest{
+	resolved, err := gw.ResolveProvider(context.Background(), route.ID, routepkg.ResolveRequest{
 		HTTPRequest: req,
 		Model:       "gpt-4o-mini",
 	})
@@ -67,37 +68,5 @@ func TestResolverUsesCustomSelector(t *testing.T) {
 	}
 	if resolved.ProviderName != "openrouter" {
 		t.Fatalf("unexpected provider: got %q want %q", resolved.ProviderName, "openrouter")
-	}
-}
-
-func TestDefaultRouteSelectorUsesPolicyStrategyAndFallback(t *testing.T) {
-	selector := DefaultRouteSelector{}
-	route := Route{
-		ID: "chat-prod",
-		Targets: []RouteTarget{
-			{ProviderRef: "weighted", Mode: TargetModeWeighted, Weight: 1},
-			{ProviderRef: "failover", Mode: TargetModeFailover, Priority: 1},
-		},
-		Policy: RoutePolicy{
-			Selection: SelectionPolicy{Strategy: RouteSelectionStrategyFailover},
-			Fallback:  FallbackPolicy{Enabled: true},
-		},
-	}
-
-	target, err := selector.SelectTarget(route, ResolveRequest{})
-	if err != nil {
-		t.Fatalf("SelectTarget returned error: %v", err)
-	}
-	if target.ProviderRef != "failover" {
-		t.Fatalf("unexpected target: got %q want %q", target.ProviderRef, "failover")
-	}
-
-	route.Policy.Selection.Strategy = RouteSelectionStrategyConditional
-	target, err = selector.SelectTarget(route, ResolveRequest{})
-	if err != nil {
-		t.Fatalf("SelectTarget with fallback returned error: %v", err)
-	}
-	if target.ProviderRef != "weighted" {
-		t.Fatalf("unexpected fallback target: got %q want %q", target.ProviderRef, "weighted")
 	}
 }

@@ -2,8 +2,11 @@ package gateway
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"sync"
 
+	configstoreintf "github.com/agent-guide/caddy-agent-gateway/configstore/intf"
 	"github.com/agent-guide/caddy-agent-gateway/llm/provider"
 )
 
@@ -66,4 +69,63 @@ func ChainProviderResolvers(resolvers ...ProviderResolver) ProviderResolver {
 		}
 		return nil, "", fmt.Errorf("provider %q is not configured", ref)
 	})
+}
+
+// cachedProviderEntry holds a cached provider instance and the config fingerprint
+// used to detect config changes.
+type cachedProviderEntry struct {
+	cfgJSON  string
+	provider provider.Provider
+	name     string
+}
+
+// cachedDynamicResolver wraps a ProviderConfigStorer and caches provider instances
+// by their serialized config. A config change (different JSON fingerprint) causes
+// the cached instance to be replaced, avoiding per-request provider construction.
+type cachedDynamicResolver struct {
+	mu    sync.RWMutex
+	store configstoreintf.ProviderConfigStorer
+	cache map[string]cachedProviderEntry
+}
+
+func newCachedDynamicResolver(store configstoreintf.ProviderConfigStorer) *cachedDynamicResolver {
+	return &cachedDynamicResolver{
+		store: store,
+		cache: make(map[string]cachedProviderEntry),
+	}
+}
+
+func (r *cachedDynamicResolver) ResolveProvider(ctx context.Context, ref string) (provider.Provider, string, error) {
+	tag, obj, err := r.store.Get(ctx, ref)
+	if err != nil {
+		return nil, "", err
+	}
+
+	cfgJSON, err := json.Marshal(obj)
+	if err != nil {
+		return nil, "", fmt.Errorf("fingerprint provider config %q: %w", ref, err)
+	}
+	fingerprint := string(cfgJSON)
+
+	r.mu.RLock()
+	entry, ok := r.cache[ref]
+	r.mu.RUnlock()
+	if ok && entry.cfgJSON == fingerprint {
+		return entry.provider, entry.name, nil
+	}
+
+	cfg, err := provider.DecodeStoredProviderConfig(tag, obj)
+	if err != nil {
+		return nil, "", err
+	}
+	prov, err := provider.NewProvider(cfg)
+	if err != nil {
+		return nil, "", err
+	}
+
+	r.mu.Lock()
+	r.cache[ref] = cachedProviderEntry{cfgJSON: fingerprint, provider: prov, name: cfg.Name}
+	r.mu.Unlock()
+
+	return prov, cfg.Name, nil
 }

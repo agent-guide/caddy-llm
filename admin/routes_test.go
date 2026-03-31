@@ -9,8 +9,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/agent-guide/caddy-agent-gateway/gateway"
 	configstoreintf "github.com/agent-guide/caddy-agent-gateway/configstore/intf"
+	routepkg "github.com/agent-guide/caddy-agent-gateway/gateway/route"
 	"gorm.io/gorm"
 )
 
@@ -36,7 +36,7 @@ func (s *testConfigStore) GetRouteStore(context.Context, configstoreintf.ConfigO
 }
 
 type testRouteStore struct {
-	items map[string]*gateway.Route
+	items map[string]*routepkg.Route
 }
 
 func (s *testRouteStore) List(context.Context) ([]any, error) {
@@ -48,14 +48,14 @@ func (s *testRouteStore) List(context.Context) ([]any, error) {
 }
 
 func (s *testRouteStore) Save(_ context.Context, id string, obj any) error {
-	route, ok := obj.(*gateway.Route)
+	r, ok := obj.(*routepkg.Route)
 	if !ok {
 		return errors.New("unexpected type")
 	}
 	if s.items == nil {
-		s.items = map[string]*gateway.Route{}
+		s.items = map[string]*routepkg.Route{}
 	}
-	cloned := *route
+	cloned := *r
 	s.items[id] = &cloned
 	return nil
 }
@@ -81,7 +81,7 @@ func (s *testRouteStore) Get(_ context.Context, id string) (any, error) {
 }
 
 type testLocalAPIKeyStore struct {
-	items map[string]*gateway.LocalAPIKey
+	items map[string]*routepkg.LocalAPIKey
 }
 
 func (s *testLocalAPIKeyStore) List(context.Context) ([]any, error) {
@@ -93,12 +93,12 @@ func (s *testLocalAPIKeyStore) List(context.Context) ([]any, error) {
 }
 
 func (s *testLocalAPIKeyStore) Save(_ context.Context, key string, obj any) error {
-	item, ok := obj.(*gateway.LocalAPIKey)
+	item, ok := obj.(*routepkg.LocalAPIKey)
 	if !ok {
 		return errors.New("unexpected type")
 	}
 	if s.items == nil {
-		s.items = map[string]*gateway.LocalAPIKey{}
+		s.items = map[string]*routepkg.LocalAPIKey{}
 	}
 	cloned := *item
 	s.items[key] = &cloned
@@ -120,15 +120,15 @@ func (s *testLocalAPIKeyStore) Get(_ context.Context, key string) (any, error) {
 
 func TestRouteCRUD(t *testing.T) {
 	handler := NewHandler(nil, &testConfigStore{
-		routeStore: &testRouteStore{items: map[string]*gateway.Route{}},
+		routeStore: &testRouteStore{items: map[string]*routepkg.Route{}},
 	}, nil)
 
-	createBody, err := json.Marshal(gateway.Route{
+	createBody, err := json.Marshal(routepkg.Route{
 		ID:   "chat-prod",
 		Name: "chat-prod",
-		Targets: []gateway.RouteTarget{{
+		Targets: []routepkg.RouteTarget{{
 			ProviderRef: "openai",
-			Mode:        gateway.TargetModeWeighted,
+			Mode:        routepkg.TargetModeWeighted,
 			Weight:      1,
 		}},
 	})
@@ -150,7 +150,7 @@ func TestRouteCRUD(t *testing.T) {
 		t.Fatalf("unexpected get status: got %d want %d", getRec.Code, http.StatusOK)
 	}
 
-	var got gateway.Route
+	var got routepkg.Route
 	if err := json.NewDecoder(getRec.Body).Decode(&got); err != nil {
 		t.Fatalf("decode route: %v", err)
 	}
@@ -164,10 +164,10 @@ func TestRouteCRUD(t *testing.T) {
 
 func TestLocalAPIKeyCRUD(t *testing.T) {
 	handler := NewHandler(nil, &testConfigStore{
-		localAPIKeyStore: &testLocalAPIKeyStore{items: map[string]*gateway.LocalAPIKey{}},
+		localAPIKeyStore: &testLocalAPIKeyStore{items: map[string]*routepkg.LocalAPIKey{}},
 	}, nil)
 
-	body, err := json.Marshal(gateway.LocalAPIKey{
+	body, err := json.Marshal(routepkg.LocalAPIKey{
 		Key:             "lk-test",
 		Name:            "test key",
 		AllowedRouteIDs: []string{"chat-prod"},
@@ -190,7 +190,7 @@ func TestLocalAPIKeyCRUD(t *testing.T) {
 		t.Fatalf("unexpected get status: got %d want %d", getRec.Code, http.StatusOK)
 	}
 
-	var got gateway.LocalAPIKey
+	var got routepkg.LocalAPIKey
 	if err := json.NewDecoder(getRec.Body).Decode(&got); err != nil {
 		t.Fatalf("decode local api key: %v", err)
 	}

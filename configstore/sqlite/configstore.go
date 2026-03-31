@@ -32,7 +32,7 @@ func init() {
 
 func (SQLiteConfigStore) CaddyModule() caddy.ModuleInfo {
 	return caddy.ModuleInfo{
-		ID:  "llm.config_stores.sqlite",
+		ID:  "agent_gateway.config_stores.sqlite",
 		New: func() caddy.Module { return new(SQLiteConfigStore) },
 	}
 }

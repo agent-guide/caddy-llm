@@ -11,7 +11,7 @@ import (
 
 	"github.com/agent-guide/caddy-agent-gateway/api"
 	"github.com/agent-guide/caddy-agent-gateway/gateway"
-	llm "github.com/agent-guide/caddy-agent-gateway/llm"
+	routepkg "github.com/agent-guide/caddy-agent-gateway/gateway/route"
 	"github.com/agent-guide/caddy-agent-gateway/llm/provider"
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
@@ -21,6 +21,8 @@ import (
 // Handler handles Anthropic-format API requests (/v1/messages).
 type Handler struct {
 	RouteID string `json:"route_id,omitempty"`
+
+	gateway *gateway.AgentGateway
 }
 
 func init() {
@@ -44,18 +46,16 @@ func (h *Handler) SetRouteID(routeID string) {
 	h.RouteID = routeID
 }
 
+func (h *Handler) SetAgentGateway(gw *gateway.AgentGateway) {
+	h.gateway = gw
+}
+
 func (h *Handler) Provision(ctx caddy.Context) error {
-	app, err := llm.GetApp(ctx)
+	app, err := gateway.GetApp(ctx)
 	if err != nil {
-		return fmt.Errorf("anthropic llm api: get llm app: %w", err)
+		return fmt.Errorf("anthropic llm api: get agent_gateway app: %w", err)
 	}
-	gw, err := gateway.ConfigureGlobalAgentGateway(app)
-	if err != nil {
-		return fmt.Errorf("anthropic llm api: configure global agent gateway: %w", err)
-	}
-	if err := gw.ValidateRoute(context.Background(), h.RouteID); err != nil {
-		return fmt.Errorf("anthropic llm api: %w", err)
-	}
+	h.gateway = app.AgentGateway()
 	return nil
 }
 
@@ -96,7 +96,11 @@ func (h *Handler) handleMessages(w http.ResponseWriter, r *http.Request) {
 
 	conv := &Converter{}
 	genReq := conv.ToInternal(&req)
-	resolved, err := api.ResolveRequest(r, genReq.Model, req.Stream, h.RouteID)
+	resolved, err := h.gateway.ResolveProvider(r.Context(), h.RouteID, routepkg.ResolveRequest{
+		HTTPRequest: r,
+		Model:       genReq.Model,
+		Stream:      req.Stream,
+	})
 	if err != nil {
 		writeError(w, api.StatusCode(err), err.Error())
 		return

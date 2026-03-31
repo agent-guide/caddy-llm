@@ -1,13 +1,13 @@
-package llm
+package gateway
 
 import (
 	"context"
 	"encoding/json"
 	"testing"
 
+	configstoresqlite "github.com/agent-guide/caddy-agent-gateway/configstore/sqlite"
 	"github.com/agent-guide/caddy-agent-gateway/llm/authmanager/credential"
 	"github.com/agent-guide/caddy-agent-gateway/llm/authmanager/manager"
-	configstoresqlite "github.com/agent-guide/caddy-agent-gateway/configstore/sqlite"
 	_ "github.com/agent-guide/caddy-agent-gateway/llm/provider/ollama"
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
@@ -60,7 +60,7 @@ var _ manager.Authenticator = (*testAuthenticatorModule)(nil)
 
 func TestParseAppFromCaddyfile(t *testing.T) {
 	d := caddyfile.NewTestDispenser(`
-	llm {
+	agent_gateway {
 		provider ollama {
 			base_url http://127.0.0.1:11434/v1
 			default_model qwen2.5
@@ -72,6 +72,12 @@ func TestParseAppFromCaddyfile(t *testing.T) {
 
 		authenticator test {
 			foo bar
+		}
+
+		route openai-chat {
+			require_local_api_key
+			allowed_model gpt-4.1
+			target ollama
 		}
 	}
 	`)
@@ -85,8 +91,8 @@ func TestParseAppFromCaddyfile(t *testing.T) {
 	if !ok {
 		t.Fatalf("parseApp() type = %T, want httpcaddyfile.App", val)
 	}
-	if appVal.Name != "llm" {
-		t.Fatalf("app name = %q, want llm", appVal.Name)
+	if appVal.Name != "agent_gateway" {
+		t.Fatalf("app name = %q, want agent_gateway", appVal.Name)
 	}
 
 	var app App
@@ -125,6 +131,9 @@ func TestParseAppFromCaddyfile(t *testing.T) {
 	if len(app.AuthenticatorsRaw) != 1 {
 		t.Fatalf("authenticator count = %d, want 1", len(app.AuthenticatorsRaw))
 	}
+	if len(app.Routes) != 1 {
+		t.Fatalf("route count = %d, want 1", len(app.Routes))
+	}
 
 	var codex struct {
 		Foo string `json:"foo,omitempty"`
@@ -135,16 +144,47 @@ func TestParseAppFromCaddyfile(t *testing.T) {
 	if codex.Foo != "bar" {
 		t.Fatalf("unexpected test authenticator config: %+v", codex)
 	}
+
+	route := app.Routes[0]
+	if route.ID != "openai-chat" {
+		t.Fatalf("route id = %q, want openai-chat", route.ID)
+	}
+	if !route.Policy.Auth.RequireLocalAPIKey {
+		t.Fatal("expected route require_local_api_key to be true")
+	}
+	if len(route.Policy.AllowedModels) != 1 || route.Policy.AllowedModels[0] != "gpt-4.1" {
+		t.Fatalf("route allowed_models = %#v", route.Policy.AllowedModels)
+	}
+	if len(route.Targets) != 1 || route.Targets[0].ProviderRef != "ollama" {
+		t.Fatalf("route targets = %#v", route.Targets)
+	}
 }
 
 func TestParseAppRejectsUnknownConfigStore(t *testing.T) {
 	d := caddyfile.NewTestDispenser(`
-	llm {
+	agent_gateway {
 		config_store memory
 	}
 	`)
 
 	if _, err := parseApp(d, nil); err == nil {
 		t.Fatal("expected unsupported config_store type to fail")
+	}
+}
+
+func TestParseAppRejectsDuplicateRouteID(t *testing.T) {
+	d := caddyfile.NewTestDispenser(`
+	agent_gateway {
+		route openai-chat {
+			target ollama
+		}
+		route openai-chat {
+			target openai
+		}
+	}
+	`)
+
+	if _, err := parseApp(d, nil); err == nil {
+		t.Fatal("expected duplicate route to fail")
 	}
 }

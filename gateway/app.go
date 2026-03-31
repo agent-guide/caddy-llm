@@ -1,4 +1,4 @@
-package llm
+package gateway
 
 import (
 	"context"
@@ -8,10 +8,12 @@ import (
 	"github.com/caddyserver/caddy/v2/caddyconfig"
 	"go.uber.org/zap"
 
+	configstoreIntf "github.com/agent-guide/caddy-agent-gateway/configstore/intf"
+	configstoreintf "github.com/agent-guide/caddy-agent-gateway/configstore/intf"
+	configstoresqlite "github.com/agent-guide/caddy-agent-gateway/configstore/sqlite"
+	routepkg "github.com/agent-guide/caddy-agent-gateway/gateway/route"
 	"github.com/agent-guide/caddy-agent-gateway/llm/authmanager/credential"
 	"github.com/agent-guide/caddy-agent-gateway/llm/authmanager/manager"
-	configstoreIntf "github.com/agent-guide/caddy-agent-gateway/configstore/intf"
-	configstoresqlite "github.com/agent-guide/caddy-agent-gateway/configstore/sqlite"
 	"github.com/agent-guide/caddy-agent-gateway/llm/provider"
 )
 
@@ -19,7 +21,7 @@ func init() {
 	caddy.RegisterModule(App{})
 }
 
-// App is the Caddy app module for the LLM gateway.
+// App is the Caddy app module for the Agent Gateway.
 // It manages providers, MCP clients, memory stores, and configuration.
 type App struct {
 	// Providers lists the configured LLM providers.
@@ -27,18 +29,21 @@ type App struct {
 	// Authenticators configures CLI credential authenticators under the llm.authenticators namespace.
 	AuthenticatorsRaw caddy.ModuleMap `json:"authenticators,omitempty" caddy:"namespace=llm.authenticators"`
 	// ConfigStore configures persistent admin/auth state storage.
-	ConfigStoreRaw caddy.ModuleMap `json:"config_store,omitempty" caddy:"namespace=llm.config_stores"`
+	ConfigStoreRaw caddy.ModuleMap `json:"config_store,omitempty" caddy:"namespace=agent_gateway.config_stores"`
+	// Routes lists statically configured gateway routes from the Caddyfile app block.
+	Routes []routepkg.Route `json:"routes,omitempty"`
 
 	logger       *zap.Logger
 	authManager  *manager.Manager
 	configStorer configstoreIntf.ConfigStorer
 	providers    map[string]provider.Provider
+	agentGateway *AgentGateway
 }
 
 // CaddyModule returns the Caddy module information.
 func (App) CaddyModule() caddy.ModuleInfo {
 	return caddy.ModuleInfo{
-		ID:  "llm",
+		ID:  "agent_gateway",
 		New: func() caddy.Module { return new(App) },
 	}
 }
@@ -46,6 +51,7 @@ func (App) CaddyModule() caddy.ModuleInfo {
 // Provision sets up the app.
 func (a *App) Provision(ctx caddy.Context) error {
 	a.logger = ctx.Logger(a)
+	a.agentGateway = NewAgentGateway()
 
 	if err := a.provisionConfigStore(ctx); err != nil {
 		return fmt.Errorf("init config store: %w", err)
@@ -66,13 +72,28 @@ func (a *App) Provision(ctx caddy.Context) error {
 		return fmt.Errorf("load credentials: %w", err)
 	}
 
-	a.logger.Info("LLM Gateway provisioned")
+	routeLoader, providerResolver, localAPIKeyStore, err := a.buildGatewayDependencies()
+	if err != nil {
+		return fmt.Errorf("configure agent gateway: %w", err)
+	}
+	a.agentGateway.Configure(routeLoader, providerResolver, localAPIKeyStore, a.authManager, nil)
+	a.agentGateway.SetRoutes(a.Routes)
+
+	a.logger.Info("Agent Gateway provisioned")
 	return nil
 }
 
 // AuthManager returns the credential manager shared across the gateway.
 func (a *App) AuthManager() *manager.Manager {
 	return a.authManager
+}
+
+// AgentGateway returns the gateway instance owned by this app.
+func (a *App) AgentGateway() *AgentGateway {
+	if a.agentGateway == nil {
+		a.agentGateway = NewAgentGateway()
+	}
+	return a.agentGateway
 }
 
 func (a *App) ConfigStore() configstoreIntf.ConfigStorer {
@@ -95,26 +116,30 @@ func (a *App) Validate() error {
 
 // Start starts the app.
 func (a *App) Start() error {
-	a.authManager.StartRefreshLoop(context.Background())
-	a.logger.Info("LLM Gateway started")
+	if a.authManager != nil {
+		a.authManager.StartRefreshLoop(context.Background())
+	}
+	a.logger.Info("Agent Gateway started")
 	return nil
 }
 
 // Stop stops the app.
 func (a *App) Stop() error {
-	a.authManager.StopRefreshLoop()
+	if a.authManager != nil {
+		a.authManager.StopRefreshLoop()
+	}
 	return nil
 }
 
-// GetApp retrieves the LLM app from the Caddy context.
+// GetApp retrieves the agent gateway app from the Caddy context.
 func GetApp(ctx caddy.Context) (*App, error) {
-	appIface, err := ctx.App("llm")
+	appIface, err := ctx.App("agent_gateway")
 	if err != nil {
 		return nil, err
 	}
 	app, ok := appIface.(*App)
 	if !ok {
-		return nil, fmt.Errorf("llm app is not *llm.App")
+		return nil, fmt.Errorf("agent_gateway app is not *gateway.App")
 	}
 	return app, nil
 }
@@ -204,6 +229,46 @@ func (a *App) registerLoadedAuthenticators(loaded map[string]any) error {
 		a.authManager.RegisterAuthenticator(name, auth)
 	}
 	return nil
+}
+
+func (app *App) buildGatewayDependencies() (routepkg.RouteLoader, ProviderResolver, configstoreintf.LocalAPIKeyStorer, error) {
+	staticResolver := NewStaticProviderResolver(func(name string) (provider.Provider, bool) {
+		return app.Provider(name)
+	})
+
+	if app.ConfigStore() == nil {
+		return nil, staticResolver, nil, nil
+	}
+
+	localAPIKeyStore, err := app.ConfigStore().GetLocalAPIKeyStore(context.Background(), routepkg.DecodeLocalAPIKey)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("get local api key store: %w", err)
+	}
+
+	var dynamicResolver ProviderResolver
+	providerStore := app.ConfigStore().GetProviderConfigStore()
+	if providerStore != nil {
+		dynamicResolver = newCachedDynamicResolver(providerStore)
+	}
+
+	var routeLoader routepkg.RouteLoader
+	routeStore, err := app.ConfigStore().GetRouteStore(context.Background(), routepkg.DecodeRoute)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("get route store: %w", err)
+	}
+	routeLoader = func(ctx context.Context, routeID string) (*routepkg.Route, error) {
+		item, err := routeStore.Get(ctx, routeID)
+		if err != nil {
+			return nil, err
+		}
+		r, ok := item.(*routepkg.Route)
+		if !ok || r == nil {
+			return nil, fmt.Errorf("route %q has unexpected type %T", routeID, item)
+		}
+		return r, nil
+	}
+
+	return routeLoader, ChainProviderResolvers(dynamicResolver, staticResolver), localAPIKeyStore, nil
 }
 
 // Interface guards

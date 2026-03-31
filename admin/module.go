@@ -9,7 +9,7 @@ import (
 	"github.com/caddyserver/caddy/v2/caddyconfig/httpcaddyfile"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 
-	llm "github.com/agent-guide/caddy-agent-gateway/llm"
+	"github.com/agent-guide/caddy-agent-gateway/gateway"
 )
 
 func init() {
@@ -32,9 +32,9 @@ func (LLMAdminHandler) CaddyModule() caddy.ModuleInfo {
 
 // Provision sets up the handler.
 func (h *LLMAdminHandler) Provision(ctx caddy.Context) error {
-	app, err := llm.GetApp(ctx)
+	app, err := gateway.GetApp(ctx)
 	if err != nil {
-		return fmt.Errorf("handle_llm_admin: get llm app: %w", err)
+		return fmt.Errorf("handle_llm_admin: get agent_gateway app: %w", err)
 	}
 	h.handler = NewHandler(app.AuthManager(), app.ConfigStore(), ctx.Logger(h))
 	return nil

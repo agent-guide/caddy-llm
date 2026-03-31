@@ -11,7 +11,7 @@ import (
 	_ "github.com/agent-guide/caddy-agent-gateway/api"
 	_ "github.com/agent-guide/caddy-agent-gateway/api/llmapi/anthropic"
 	_ "github.com/agent-guide/caddy-agent-gateway/api/llmapi/openai"
-	_ "github.com/agent-guide/caddy-agent-gateway/llm"
+	_ "github.com/agent-guide/caddy-agent-gateway/gateway"
 
 	// LLM Providers (register as factory + Caddy modules via init())
 	_ "github.com/agent-guide/caddy-agent-gateway/llm/provider/anthropic"

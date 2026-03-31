@@ -1,4 +1,4 @@
-package gateway
+package route
 
 import (
 	"encoding/json"
@@ -8,17 +8,17 @@ import (
 
 // DecodeRoute decodes a persisted route and fills missing runtime defaults.
 func DecodeRoute(data []byte) (any, error) {
-	var route Route
-	if err := json.Unmarshal(data, &route); err != nil {
+	var r Route
+	if err := json.Unmarshal(data, &r); err != nil {
 		return nil, fmt.Errorf("decode route: %w", err)
 	}
-	route.Policy.Defaults()
+	r.Policy.Defaults()
 	now := time.Now().UTC()
-	if route.CreatedAt.IsZero() {
-		route.CreatedAt = now
+	if r.CreatedAt.IsZero() {
+		r.CreatedAt = now
 	}
-	if route.UpdatedAt.IsZero() {
-		route.UpdatedAt = now
+	if r.UpdatedAt.IsZero() {
+		r.UpdatedAt = now
 	}
-	return &route, nil
+	return &r, nil
 }

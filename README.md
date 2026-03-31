@@ -36,7 +36,7 @@ The `llm` app module is the runtime backbone of the project. It provisions the c
 ### API Compatibility Layer
 
 The `handle_llm_api` HTTP handler routes incoming requests to compatible API modules. The repository currently includes OpenAI-compatible and Anthropic-compatible handler implementations, allowing clients to keep familiar API shapes while the gateway controls upstream provider access.
-`handle_llm_api` only binds an API-compatible handler to a `route_id`. Route-level gateway policy is declared centrally with `agent_gateway_route`, including `require_local_api_key`, `allowed_model`, and `target <provider> [weight]`.
+`handle_llm_api` only binds an API-compatible handler to a `route_id`. Route-level gateway policy is declared centrally under `agent_gateway { route <id> { ... } }`, including `require_local_api_key`, `allowed_model`, and `target <provider> [weight]`.
 
 ### Provider System
 
@@ -95,7 +95,7 @@ Authenticators are configuration-driven now: if you do not declare an `authentic
 {
     admin localhost:2019
 
-    llm {
+    agent_gateway {
         provider openai {
             default_model gpt-4.1
         }
@@ -117,6 +117,19 @@ Authenticators are configuration-driven now: if you do not declare an `authentic
             callback_port 54545
             no_browser false
         }
+
+        route openai-chat {
+            require_local_api_key
+            allowed_model gpt-4.1
+            allowed_model gpt-4.1-mini
+            target openai 80
+            target openrouter 20
+        }
+
+        route anthropic-messages {
+            require_local_api_key
+            target anthropic
+        }
     }
 }
 
@@ -129,25 +142,9 @@ localhost:8082 {
             route_id anthropic-messages
         }
 
-        agent_gateway_route openai-chat {
-            require_local_api_key
-            allowed_model gpt-4.1
-            allowed_model gpt-4.1-mini
-            target openai 80
-            target openrouter 20
-        }
-
-        agent_gateway_route anthropic-messages {
-            require_local_api_key
-            target anthropic
-        }
-
         # openai-compatible ingress backed by a different provider:
         # handle_llm_api openai {
         #     route_id openai-via-openrouter
-        # }
-        # agent_gateway_route openai-via-openrouter {
-        #     target openrouter
         # }
     }
 
@@ -157,7 +154,7 @@ localhost:8082 {
 }
 ```
 
-Custom providers can be added by shipping a Caddy module under `llm.providers.<name>` that implements the shared `provider.Provider` interface. Once the module is linked into the Caddy build, it can be mounted with `provider <name> { ... }` inside the global `llm` block and referenced from `agent_gateway_route <route_id> { target <name> }`.
+Custom providers can be added by shipping a Caddy module under `llm.providers.<name>` that implements the shared `provider.Provider` interface. Once the module is linked into the Caddy build, it can be mounted with `provider <name> { ... }` inside the global `agent_gateway` block and referenced from `route <route_id> { target <name> }`.
 
 ## Admin API Examples
 
@@ -216,6 +213,8 @@ handle_llm_api openai {
     route_id chat-prod
 }
 ```
+
+Static route declarations in the Caddyfile belong under the global `agent_gateway` block.
 
 Call the gateway with the local API key:
 

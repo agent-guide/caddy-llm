@@ -1,4 +1,4 @@
-package gateway
+package route
 
 import (
 	"encoding/json"
@@ -22,9 +22,9 @@ type legacyLocalAPIKey struct {
 	UpdatedAt     time.Time `json:"updated_at"`
 }
 
-func ValidateLocalAPIKeyForRoute(route Route, key *LocalAPIKey) (*LocalAPIKey, error) {
+func ValidateLocalAPIKeyForRoute(r Route, key *LocalAPIKey) (*LocalAPIKey, error) {
 	if key == nil {
-		if route.Policy.Auth.RequireLocalAPIKey {
+		if r.Policy.Auth.RequireLocalAPIKey {
 			return nil, &HTTPError{status: http.StatusUnauthorized, msg: "local api key is required"}
 		}
 		return nil, nil
@@ -35,7 +35,7 @@ func ValidateLocalAPIKeyForRoute(route Route, key *LocalAPIKey) (*LocalAPIKey, e
 	if !key.ExpiresAt.IsZero() && key.ExpiresAt.Before(time.Now()) {
 		return nil, &HTTPError{status: http.StatusForbidden, msg: "local api key is expired"}
 	}
-	if len(key.AllowedRouteIDs) > 0 && !slices.Contains(key.AllowedRouteIDs, route.ID) {
+	if len(key.AllowedRouteIDs) > 0 && !slices.Contains(key.AllowedRouteIDs, r.ID) {
 		return nil, &HTTPError{status: http.StatusForbidden, msg: "local api key is not allowed to access this route"}
 	}
 	return key, nil

@@ -11,8 +11,9 @@ import (
 	"testing"
 
 	"github.com/agent-guide/caddy-agent-gateway/admin"
-	"github.com/agent-guide/caddy-agent-gateway/gateway"
 	configstoreintf "github.com/agent-guide/caddy-agent-gateway/configstore/intf"
+	"github.com/agent-guide/caddy-agent-gateway/gateway"
+	routepkg "github.com/agent-guide/caddy-agent-gateway/gateway/route"
 	"github.com/cloudwego/eino/schema"
 	"gorm.io/gorm"
 
@@ -74,41 +75,44 @@ func (e testStatusError) StatusCode() int { return e.status }
 
 func newSeededHandler(authMgr *manager.Manager, prov provider.Provider) *Handler {
 	handler := NewHandler()
-	initGatewayForTests(nil, gateway.NewStaticProviderResolver(func(name string) (provider.Provider, bool) {
+	gw := initGatewayForTests(nil, gateway.NewStaticProviderResolver(func(name string) (provider.Provider, bool) {
 		if name != "openai" || prov == nil {
 			return nil, false
 		}
 		return prov, true
 	}), nil, authMgr, nil)
+	handler.SetAgentGateway(gw)
 	handler.RouteID = "openai-test-route"
-	gateway.GlobalAgentGateway().EnsureRoute(gateway.Route{
+	gw.EnsureRoute(routepkg.Route{
 		ID:   handler.RouteID,
 		Name: handler.RouteID,
-		Targets: []gateway.RouteTarget{{
+		Targets: []routepkg.RouteTarget{{
 			ProviderRef: "openai",
-			Mode:        gateway.TargetModeWeighted,
+			Mode:        routepkg.TargetModeWeighted,
 			Weight:      1,
 		}},
 	})
 	return handler
 }
 
-func initGatewayForTests(routeLoader gateway.RouteLoader, providerResolver gateway.ProviderResolver, localAPIKeyStore configstoreintf.LocalAPIKeyStorer, authMgr *manager.Manager, selector gateway.RouteSelector) {
-	gateway.ResetGlobalAgentGateway().Configure(routeLoader, providerResolver, localAPIKeyStore, authMgr, selector)
+func initGatewayForTests(routeLoader routepkg.RouteLoader, providerResolver gateway.ProviderResolver, localAPIKeyStore configstoreintf.LocalAPIKeyStorer, authMgr *manager.Manager, selector routepkg.RouteSelector) *gateway.AgentGateway {
+	gw := gateway.NewAgentGateway()
+	gw.Configure(routeLoader, providerResolver, localAPIKeyStore, authMgr, selector)
+	return gw
 }
 
 type testLocalAPIKeyStore struct {
-	items map[string]*gateway.LocalAPIKey
+	items map[string]*routepkg.LocalAPIKey
 }
 
 func (s *testLocalAPIKeyStore) List(context.Context) ([]any, error) { return nil, nil }
 func (s *testLocalAPIKeyStore) Save(_ context.Context, key string, obj any) error {
-	item, ok := obj.(*gateway.LocalAPIKey)
+	item, ok := obj.(*routepkg.LocalAPIKey)
 	if !ok {
 		return errors.New("unexpected type")
 	}
 	if s.items == nil {
-		s.items = map[string]*gateway.LocalAPIKey{}
+		s.items = map[string]*routepkg.LocalAPIKey{}
 	}
 	cloned := *item
 	s.items[key] = &cloned
@@ -179,7 +183,7 @@ func (s *testProviderConfigStore) Get(_ context.Context, id string) (string, any
 }
 
 type testRouteStore struct {
-	items map[string]*gateway.Route
+	items map[string]*routepkg.Route
 }
 
 func (s *testRouteStore) List(context.Context) ([]any, error) {
@@ -191,14 +195,14 @@ func (s *testRouteStore) List(context.Context) ([]any, error) {
 }
 
 func (s *testRouteStore) Save(_ context.Context, id string, obj any) error {
-	route, ok := obj.(*gateway.Route)
+	r, ok := obj.(*routepkg.Route)
 	if !ok {
 		return errors.New("unexpected type")
 	}
 	if s.items == nil {
-		s.items = map[string]*gateway.Route{}
+		s.items = map[string]*routepkg.Route{}
 	}
-	cloned := *route
+	cloned := *r
 	s.items[id] = &cloned
 	return nil
 }
@@ -483,19 +487,20 @@ func TestServeLLMApiStreamsOpenAIChunks(t *testing.T) {
 
 func TestServeLLMApiRequiresLocalAPIKeyWhenRouteRequiresIt(t *testing.T) {
 	handler := NewHandler()
-	initGatewayForTests(nil, gateway.NewStaticProviderResolver(func(name string) (provider.Provider, bool) {
+	gw := initGatewayForTests(nil, gateway.NewStaticProviderResolver(func(name string) (provider.Provider, bool) {
 		if name == "openai" {
 			return &testProvider{}, true
 		}
 		return nil, false
 	}), nil, nil, nil)
+	handler.SetAgentGateway(gw)
 	handler.RouteID = "openai-test-route"
-	gateway.GlobalAgentGateway().EnsureRoute(gateway.Route{
+	gw.EnsureRoute(routepkg.Route{
 		ID:      handler.RouteID,
 		Name:    handler.RouteID,
-		Targets: []gateway.RouteTarget{{ProviderRef: "openai", Mode: gateway.TargetModeWeighted, Weight: 1}},
-		Policy: gateway.RoutePolicy{
-			Auth: gateway.AuthPolicy{RequireLocalAPIKey: true},
+		Targets: []routepkg.RouteTarget{{ProviderRef: "openai", Mode: routepkg.TargetModeWeighted, Weight: 1}},
+		Policy: routepkg.RoutePolicy{
+			Auth: routepkg.AuthPolicy{RequireLocalAPIKey: true},
 		},
 	})
 
@@ -533,7 +538,7 @@ func TestServeLLMApiRoutesViaLocalAPIKeyAndRouteTarget(t *testing.T) {
 	}
 
 	handler := NewHandler()
-	initGatewayForTests(nil, gateway.NewStaticProviderResolver(func(name string) (provider.Provider, bool) {
+	gw := initGatewayForTests(nil, gateway.NewStaticProviderResolver(func(name string) (provider.Provider, bool) {
 		switch name {
 		case "openai":
 			return openAIProv, true
@@ -543,20 +548,21 @@ func TestServeLLMApiRoutesViaLocalAPIKeyAndRouteTarget(t *testing.T) {
 			return nil, false
 		}
 	}), &testLocalAPIKeyStore{
-		items: map[string]*gateway.LocalAPIKey{
+		items: map[string]*routepkg.LocalAPIKey{
 			"local-test-key": {
 				Key:             "local-test-key",
 				AllowedRouteIDs: []string{"chat-prod"},
 			},
 		},
 	}, nil, nil)
+	handler.SetAgentGateway(gw)
 	handler.RouteID = "chat-prod"
-	gateway.GlobalAgentGateway().EnsureRoute(gateway.Route{
+	gw.EnsureRoute(routepkg.Route{
 		ID:   "chat-prod",
 		Name: "chat-prod",
-		Targets: []gateway.RouteTarget{{
+		Targets: []routepkg.RouteTarget{{
 			ProviderRef: "openrouter",
-			Mode:        gateway.TargetModeWeighted,
+			Mode:        routepkg.TargetModeWeighted,
 			Weight:      1,
 		}},
 	})
@@ -602,18 +608,18 @@ func TestServeLLMApiReloadsRouteTargetsPerRequest(t *testing.T) {
 		},
 	}
 
-	currentRoute := &gateway.Route{
+	currentRoute := &routepkg.Route{
 		ID:   "chat-prod",
 		Name: "chat-prod",
-		Targets: []gateway.RouteTarget{{
+		Targets: []routepkg.RouteTarget{{
 			ProviderRef: "openai",
-			Mode:        gateway.TargetModeWeighted,
+			Mode:        routepkg.TargetModeWeighted,
 			Weight:      1,
 		}},
 	}
 
 	handler := NewHandler()
-	initGatewayForTests(func(context.Context, string) (*gateway.Route, error) {
+	gw := initGatewayForTests(func(context.Context, string) (*routepkg.Route, error) {
 		return currentRoute, nil
 	}, gateway.NewStaticProviderResolver(func(name string) (provider.Provider, bool) {
 		switch name {
@@ -625,15 +631,16 @@ func TestServeLLMApiReloadsRouteTargetsPerRequest(t *testing.T) {
 			return nil, false
 		}
 	}), &testLocalAPIKeyStore{
-		items: map[string]*gateway.LocalAPIKey{
+		items: map[string]*routepkg.LocalAPIKey{
 			"local-test-key": {
 				Key:             "local-test-key",
 				AllowedRouteIDs: []string{"chat-prod"},
 			},
 		},
 	}, nil, nil)
+	handler.SetAgentGateway(gw)
 	handler.RouteID = "chat-prod"
-	gateway.GlobalAgentGateway().EnsureRoute(*currentRoute)
+	gw.EnsureRoute(*currentRoute)
 
 	makeReq := func() *httptest.ResponseRecorder {
 		body, err := json.Marshal(ChatCompletionRequest{
@@ -666,12 +673,12 @@ func TestServeLLMApiReloadsRouteTargetsPerRequest(t *testing.T) {
 		t.Fatal("expected openrouter provider not to be called yet")
 	}
 
-	currentRoute = &gateway.Route{
+	currentRoute = &routepkg.Route{
 		ID:   "chat-prod",
 		Name: "chat-prod",
-		Targets: []gateway.RouteTarget{{
+		Targets: []routepkg.RouteTarget{{
 			ProviderRef: "openrouter",
-			Mode:        gateway.TargetModeWeighted,
+			Mode:        routepkg.TargetModeWeighted,
 			Weight:      1,
 		}},
 	}
@@ -694,8 +701,8 @@ func TestAdminProvisionedRouteAndLocalAPIKeyDriveOpenAIHandler(t *testing.T) {
 
 	cfgStore := &integrationConfigStore{
 		providerStore:    &testProviderConfigStore{items: map[string]map[string]any{}},
-		routeStore:       &testRouteStore{items: map[string]*gateway.Route{}},
-		localAPIKeyStore: &testLocalAPIKeyStore{items: map[string]*gateway.LocalAPIKey{}},
+		routeStore:       &testRouteStore{items: map[string]*routepkg.Route{}},
+		localAPIKeyStore: &testLocalAPIKeyStore{items: map[string]*routepkg.LocalAPIKey{}},
 	}
 	adminHandler := admin.NewHandler(nil, cfgStore, nil)
 
@@ -720,30 +727,30 @@ func TestAdminProvisionedRouteAndLocalAPIKeyDriveOpenAIHandler(t *testing.T) {
 			"base_url": "https://openrouter.example",
 		},
 	})
-	postJSON("/admin/routes", gateway.Route{
+	postJSON("/admin/routes", routepkg.Route{
 		ID:   "chat-prod",
 		Name: "chat-prod",
-		Targets: []gateway.RouteTarget{{
+		Targets: []routepkg.RouteTarget{{
 			ProviderRef: "openrouter",
-			Mode:        gateway.TargetModeWeighted,
+			Mode:        routepkg.TargetModeWeighted,
 			Weight:      1,
 		}},
-		Policy: gateway.RoutePolicy{
-			Auth: gateway.AuthPolicy{RequireLocalAPIKey: true},
+		Policy: routepkg.RoutePolicy{
+			Auth: routepkg.AuthPolicy{RequireLocalAPIKey: true},
 		},
 	})
-	postJSON("/admin/local_api_keys", gateway.LocalAPIKey{
+	postJSON("/admin/local_api_keys", routepkg.LocalAPIKey{
 		Key:             "lk-e2e",
 		AllowedRouteIDs: []string{"chat-prod"},
 	})
 
 	handler := NewHandler()
-	initGatewayForTests(func(ctx context.Context, routeID string) (*gateway.Route, error) {
+	gw := initGatewayForTests(func(ctx context.Context, routeID string) (*routepkg.Route, error) {
 		item, err := cfgStore.routeStore.Get(ctx, routeID)
 		if err != nil {
 			return nil, err
 		}
-		route, ok := item.(*gateway.Route)
+		route, ok := item.(*routepkg.Route)
 		if !ok {
 			return nil, errors.New("unexpected route type")
 		}
@@ -754,6 +761,7 @@ func TestAdminProvisionedRouteAndLocalAPIKeyDriveOpenAIHandler(t *testing.T) {
 		}
 		return nil, false
 	}), cfgStore.localAPIKeyStore, nil, nil)
+	handler.SetAgentGateway(gw)
 	handler.RouteID = "chat-prod"
 
 	body, err := json.Marshal(ChatCompletionRequest{
@@ -795,21 +803,21 @@ func TestServeLLMApiReloadsProviderConfigPerRequest(t *testing.T) {
 				},
 			},
 		}},
-		routeStore: &testRouteStore{items: map[string]*gateway.Route{
+		routeStore: &testRouteStore{items: map[string]*routepkg.Route{
 			"chat-prod": {
 				ID:   "chat-prod",
 				Name: "chat-prod",
-				Targets: []gateway.RouteTarget{{
+				Targets: []routepkg.RouteTarget{{
 					ProviderRef: "dyn-provider",
-					Mode:        gateway.TargetModeWeighted,
+					Mode:        routepkg.TargetModeWeighted,
 					Weight:      1,
 				}},
-				Policy: gateway.RoutePolicy{
-					Auth: gateway.AuthPolicy{RequireLocalAPIKey: true},
+				Policy: routepkg.RoutePolicy{
+					Auth: routepkg.AuthPolicy{RequireLocalAPIKey: true},
 				},
 			},
 		}},
-		localAPIKeyStore: &testLocalAPIKeyStore{items: map[string]*gateway.LocalAPIKey{
+		localAPIKeyStore: &testLocalAPIKeyStore{items: map[string]*routepkg.LocalAPIKey{
 			"lk-dynamic": {
 				Key:             "lk-dynamic",
 				AllowedRouteIDs: []string{"chat-prod"},
@@ -818,12 +826,12 @@ func TestServeLLMApiReloadsProviderConfigPerRequest(t *testing.T) {
 	}
 
 	handler := NewHandler()
-	initGatewayForTests(func(ctx context.Context, routeID string) (*gateway.Route, error) {
+	gw := initGatewayForTests(func(ctx context.Context, routeID string) (*routepkg.Route, error) {
 		item, err := cfgStore.routeStore.Get(ctx, routeID)
 		if err != nil {
 			return nil, err
 		}
-		route, _ := item.(*gateway.Route)
+		route, _ := item.(*routepkg.Route)
 		return route, nil
 	}, gateway.ProviderResolverFunc(func(ctx context.Context, ref string) (provider.Provider, string, error) {
 		tag, obj, err := cfgStore.providerStore.Get(ctx, ref)
@@ -840,6 +848,7 @@ func TestServeLLMApiReloadsProviderConfigPerRequest(t *testing.T) {
 		}
 		return prov, cfg.Name, nil
 	}), cfgStore.localAPIKeyStore, nil, nil)
+	handler.SetAgentGateway(gw)
 	handler.RouteID = "chat-prod"
 
 	makeReq := func() ChatCompletionResponse {

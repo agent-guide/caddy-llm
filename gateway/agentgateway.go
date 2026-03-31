@@ -6,27 +6,28 @@ import (
 	"net/http"
 	"sync"
 
-	"github.com/agent-guide/caddy-agent-gateway/llm/authmanager/manager"
 	configstoreintf "github.com/agent-guide/caddy-agent-gateway/configstore/intf"
+	routepkg "github.com/agent-guide/caddy-agent-gateway/gateway/route"
+	"github.com/agent-guide/caddy-agent-gateway/llm/authmanager/manager"
 	"github.com/agent-guide/caddy-agent-gateway/llm/provider"
 )
 
 type AgentGateway struct {
 	mu sync.RWMutex
 
-	routes     map[string]Route
+	routes     map[string]routepkg.Route
 	configured bool
 
-	RouteLoader      RouteLoader
+	RouteLoader      routepkg.RouteLoader
 	ProviderResolver ProviderResolver
 	LocalAPIKeyStore configstoreintf.LocalAPIKeyStorer
 	AuthManager      *manager.Manager
-	Selector         RouteSelector
+	Selector         routepkg.RouteSelector
 }
 
 func NewAgentGateway() *AgentGateway {
 	return &AgentGateway{
-		routes:     map[string]Route{},
+		routes:     map[string]routepkg.Route{},
 		configured: false,
 	}
 }
@@ -35,7 +36,7 @@ func (g *AgentGateway) Reset() {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 
-	g.routes = map[string]Route{}
+	g.routes = map[string]routepkg.Route{}
 	g.configured = false
 	g.RouteLoader = nil
 	g.ProviderResolver = nil
@@ -44,7 +45,7 @@ func (g *AgentGateway) Reset() {
 	g.Selector = nil
 }
 
-func (g *AgentGateway) Configure(routeLoader RouteLoader, providerResolver ProviderResolver, localAPIKeyStore configstoreintf.LocalAPIKeyStorer, authMgr *manager.Manager, selector RouteSelector) {
+func (g *AgentGateway) Configure(routeLoader routepkg.RouteLoader, providerResolver ProviderResolver, localAPIKeyStore configstoreintf.LocalAPIKeyStorer, authMgr *manager.Manager, selector routepkg.RouteSelector) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	g.RouteLoader = routeLoader
@@ -55,52 +56,52 @@ func (g *AgentGateway) Configure(routeLoader RouteLoader, providerResolver Provi
 	g.configured = true
 }
 
-func (g *AgentGateway) SetRoutes(routes []Route) {
+func (g *AgentGateway) SetRoutes(routes []routepkg.Route) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 
-	g.routes = make(map[string]Route, len(routes))
-	for _, route := range routes {
-		if route.ID == "" {
+	g.routes = make(map[string]routepkg.Route, len(routes))
+	for _, r := range routes {
+		if r.ID == "" {
 			continue
 		}
-		route.Policy.Defaults()
-		g.routes[route.ID] = route
+		r.Policy.Defaults()
+		g.routes[r.ID] = r
 	}
 }
 
-func (g *AgentGateway) EnsureRoute(route Route) {
-	if route.ID == "" {
+func (g *AgentGateway) EnsureRoute(r routepkg.Route) {
+	if r.ID == "" {
 		return
 	}
 
-	route.Policy.Defaults()
+	r.Policy.Defaults()
 
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	if g.routes == nil {
-		g.routes = map[string]Route{}
+		g.routes = map[string]routepkg.Route{}
 	}
-	g.routes[route.ID] = route
+	g.routes[r.ID] = r
 }
 
-func (g *AgentGateway) Routes() []Route {
+func (g *AgentGateway) Routes() []routepkg.Route {
 	g.mu.RLock()
 	defer g.mu.RUnlock()
 
-	out := make([]Route, 0, len(g.routes))
-	for _, route := range g.routes {
-		out = append(out, route)
+	out := make([]routepkg.Route, 0, len(g.routes))
+	for _, r := range g.routes {
+		out = append(out, r)
 	}
 	return out
 }
 
-func (g *AgentGateway) Route(routeID string) (Route, bool) {
+func (g *AgentGateway) Route(routeID string) (routepkg.Route, bool) {
 	g.mu.RLock()
 	defer g.mu.RUnlock()
 
-	route, ok := g.routes[routeID]
-	return route, ok
+	r, ok := g.routes[routeID]
+	return r, ok
 }
 
 func (g *AgentGateway) ValidateRoute(ctx context.Context, routeID string) error {
@@ -108,7 +109,7 @@ func (g *AgentGateway) ValidateRoute(ctx context.Context, routeID string) error 
 		return fmt.Errorf("route_id is required")
 	}
 
-	route, ok := g.Route(routeID)
+	r, ok := g.Route(routeID)
 	if !ok {
 		g.mu.RLock()
 		routeLoader := g.RouteLoader
@@ -120,7 +121,7 @@ func (g *AgentGateway) ValidateRoute(ctx context.Context, routeID string) error 
 		if err != nil || loaded == nil {
 			return fmt.Errorf("route %q is not configured", routeID)
 		}
-		route = *loaded
+		r = *loaded
 	}
 
 	resolver := g.providerResolver()
@@ -128,7 +129,7 @@ func (g *AgentGateway) ValidateRoute(ctx context.Context, routeID string) error 
 		return fmt.Errorf("provider resolver is not configured")
 	}
 
-	for _, target := range route.Targets {
+	for _, target := range r.Targets {
 		if _, _, err := resolver.ResolveProvider(ctx, target.ProviderRef); err != nil {
 			return fmt.Errorf("provider %q is not configured", target.ProviderRef)
 		}
@@ -136,61 +137,61 @@ func (g *AgentGateway) ValidateRoute(ctx context.Context, routeID string) error 
 	return nil
 }
 
-func (g *AgentGateway) ResolveProvider(ctx context.Context, routeID string, req ResolveRequest) (*ResolvedRoute, error) {
-	route, err := g.resolveRoute(ctx, routeID)
+func (g *AgentGateway) ResolveProvider(ctx context.Context, routeID string, req routepkg.ResolveRequest) (*routepkg.ResolvedRoute, error) {
+	r, err := g.resolveRoute(ctx, routeID)
 	if err != nil {
 		return nil, err
 	}
 
-	localKey, err := g.resolveLocalAPIKey(ctx, req.HTTPRequest, route)
+	localKey, err := g.resolveLocalAPIKey(ctx, req.HTTPRequest, r)
 	if err != nil {
 		return nil, err
 	}
-	if err := validateRequestPolicy(route, localKey, req); err != nil {
+	if err := routepkg.ValidateRequestPolicy(r, localKey, req); err != nil {
 		return nil, err
 	}
 
 	selector := g.selector()
-	target, err := selector.SelectTarget(route, req)
+	target, err := selector.SelectTarget(r, req)
 	if err != nil {
 		return nil, err
 	}
 
 	resolver := g.providerResolver()
 	if resolver == nil {
-		return nil, &HTTPError{status: http.StatusServiceUnavailable, msg: "provider resolver is not configured"}
+		return nil, routepkg.NewHTTPError(http.StatusServiceUnavailable, "provider resolver is not configured")
 	}
 	prov, providerName, err := resolver.ResolveProvider(ctx, target.ProviderRef)
 	if err != nil || prov == nil {
-		return nil, &HTTPError{status: http.StatusBadGateway, msg: fmt.Sprintf("route target provider %q is not configured", target.ProviderRef)}
+		return nil, routepkg.NewHTTPError(http.StatusBadGateway, fmt.Sprintf("route target provider %q is not configured", target.ProviderRef))
 	}
 	if providerName == "" {
 		providerName = target.ProviderRef
 	}
 	prov = g.wrapProvider(prov, providerName)
 
-	return &ResolvedRoute{
-		Route:        route,
+	return &routepkg.ResolvedRoute{
+		Route:        r,
 		LocalAPIKey:  localKey,
 		ProviderName: providerName,
 		Provider:     prov,
 	}, nil
 }
 
-func (g *AgentGateway) resolveRoute(ctx context.Context, routeID string) (Route, error) {
+func (g *AgentGateway) resolveRoute(ctx context.Context, routeID string) (routepkg.Route, error) {
 	if routeID == "" {
-		return Route{}, &HTTPError{status: http.StatusServiceUnavailable, msg: "route id is not configured"}
+		return routepkg.Route{}, routepkg.NewHTTPError(http.StatusServiceUnavailable, "route id is not configured")
 	}
 
 	g.mu.RLock()
-	route, ok := g.routes[routeID]
+	r, ok := g.routes[routeID]
 	loader := g.RouteLoader
 	g.mu.RUnlock()
 
 	if loader != nil {
 		latest, err := loader(ctx, routeID)
 		if err != nil {
-			return Route{}, &HTTPError{status: http.StatusServiceUnavailable, msg: fmt.Sprintf("route %q is unavailable", routeID)}
+			return routepkg.Route{}, routepkg.NewHTTPError(http.StatusServiceUnavailable, fmt.Sprintf("route %q is unavailable", routeID))
 		}
 		if latest != nil {
 			latest.Policy.Defaults()
@@ -200,17 +201,17 @@ func (g *AgentGateway) resolveRoute(ctx context.Context, routeID string) (Route,
 	}
 
 	if !ok {
-		return Route{}, &HTTPError{status: http.StatusServiceUnavailable, msg: fmt.Sprintf("route %q is not configured", routeID)}
+		return routepkg.Route{}, routepkg.NewHTTPError(http.StatusServiceUnavailable, fmt.Sprintf("route %q is not configured", routeID))
 	}
-	route.Policy.Defaults()
-	return route, nil
+	r.Policy.Defaults()
+	return r, nil
 }
 
-func (g *AgentGateway) resolveLocalAPIKey(ctx context.Context, httpReq *http.Request, route Route) (*LocalAPIKey, error) {
-	rawKey := extractAPIKey(httpReq)
+func (g *AgentGateway) resolveLocalAPIKey(ctx context.Context, httpReq *http.Request, r routepkg.Route) (*routepkg.LocalAPIKey, error) {
+	rawKey := routepkg.ExtractAPIKey(httpReq)
 	if rawKey == "" {
-		if route.Policy.Auth.RequireLocalAPIKey {
-			return nil, &HTTPError{status: http.StatusUnauthorized, msg: "local api key is required"}
+		if r.Policy.Auth.RequireLocalAPIKey {
+			return nil, routepkg.NewHTTPError(http.StatusUnauthorized, "local api key is required")
 		}
 		return nil, nil
 	}
@@ -219,19 +220,19 @@ func (g *AgentGateway) resolveLocalAPIKey(ctx context.Context, httpReq *http.Req
 	store := g.LocalAPIKeyStore
 	g.mu.RUnlock()
 	if store == nil {
-		return nil, &HTTPError{status: http.StatusServiceUnavailable, msg: "local api key store is not configured"}
+		return nil, routepkg.NewHTTPError(http.StatusServiceUnavailable, "local api key store is not configured")
 	}
 
 	item, err := store.Get(ctx, rawKey)
 	if err != nil {
-		return nil, &HTTPError{status: http.StatusUnauthorized, msg: "invalid local api key"}
+		return nil, routepkg.NewHTTPError(http.StatusUnauthorized, "invalid local api key")
 	}
 
-	key, ok := item.(*LocalAPIKey)
+	key, ok := item.(*routepkg.LocalAPIKey)
 	if !ok || key == nil {
-		return nil, &HTTPError{status: http.StatusUnauthorized, msg: "invalid local api key"}
+		return nil, routepkg.NewHTTPError(http.StatusUnauthorized, "invalid local api key")
 	}
-	return ValidateLocalAPIKeyForRoute(route, key)
+	return routepkg.ValidateLocalAPIKeyForRoute(r, key)
 }
 
 func (g *AgentGateway) providerResolver() ProviderResolver {
@@ -240,11 +241,11 @@ func (g *AgentGateway) providerResolver() ProviderResolver {
 	return g.ProviderResolver
 }
 
-func (g *AgentGateway) selector() RouteSelector {
+func (g *AgentGateway) selector() routepkg.RouteSelector {
 	g.mu.RLock()
 	defer g.mu.RUnlock()
 	if g.Selector == nil {
-		return DefaultRouteSelector{}
+		return routepkg.DefaultRouteSelector{}
 	}
 	return g.Selector
 }

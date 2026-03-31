@@ -1,4 +1,4 @@
-package gateway
+package route
 
 import (
 	"context"
@@ -42,10 +42,11 @@ func NewHTTPError(status int, msg string) error {
 	return &HTTPError{status: status, msg: msg}
 }
 
-func validateRequestPolicy(route Route, key *LocalAPIKey, req ResolveRequest) error {
+// ValidateRequestPolicy validates the request against route-level and consumer-level policy.
+func ValidateRequestPolicy(r Route, key *LocalAPIKey, req ResolveRequest) error {
 	if req.Model != "" {
-		if len(route.Policy.AllowedModels) > 0 && !slices.Contains(route.Policy.AllowedModels, req.Model) {
-			return &HTTPError{status: http.StatusForbidden, msg: fmt.Sprintf("model %q is not allowed on route %q", req.Model, route.ID)}
+		if len(r.Policy.AllowedModels) > 0 && !slices.Contains(r.Policy.AllowedModels, req.Model) {
+			return &HTTPError{status: http.StatusForbidden, msg: fmt.Sprintf("model %q is not allowed on route %q", req.Model, r.ID)}
 		}
 		if key != nil && key.PolicyOverride != nil && len(key.PolicyOverride.AllowedModels) > 0 &&
 			!slices.Contains(key.PolicyOverride.AllowedModels, req.Model) {
@@ -54,7 +55,7 @@ func validateRequestPolicy(route Route, key *LocalAPIKey, req ResolveRequest) er
 	}
 
 	if req.Stream {
-		if route.Policy.AllowStreaming != nil && !*route.Policy.AllowStreaming {
+		if r.Policy.AllowStreaming != nil && !*r.Policy.AllowStreaming {
 			return &HTTPError{status: http.StatusForbidden, msg: "streaming is disabled on this route"}
 		}
 		if key != nil && key.PolicyOverride != nil && key.PolicyOverride.AllowStreaming != nil && !*key.PolicyOverride.AllowStreaming {
@@ -65,6 +66,7 @@ func validateRequestPolicy(route Route, key *LocalAPIKey, req ResolveRequest) er
 	return nil
 }
 
+// matchesConditions checks whether a target's conditions are satisfied by the request.
 func matchesConditions(conditions TargetConditions, req ResolveRequest) bool {
 	if len(conditions.Models) > 0 && req.Model != "" && !slices.Contains(conditions.Models, req.Model) {
 		return false
@@ -75,7 +77,8 @@ func matchesConditions(conditions TargetConditions, req ResolveRequest) bool {
 	return true
 }
 
-func extractAPIKey(r *http.Request) string {
+// ExtractAPIKey extracts the bearer token or x-api-key value from the request.
+func ExtractAPIKey(r *http.Request) string {
 	if r == nil {
 		return ""
 	}

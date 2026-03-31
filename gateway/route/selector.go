@@ -1,4 +1,4 @@
-package gateway
+package route
 
 import (
 	"fmt"
@@ -13,9 +13,9 @@ type RouteSelector interface {
 // DefaultRouteSelector implements the current built-in weighted/failover target selection.
 type DefaultRouteSelector struct{}
 
-func (s DefaultRouteSelector) SelectTarget(route Route, req ResolveRequest) (*RouteTarget, error) {
-	candidates := make([]RouteTarget, 0, len(route.Targets))
-	for _, target := range route.Targets {
+func (s DefaultRouteSelector) SelectTarget(r Route, req ResolveRequest) (*RouteTarget, error) {
+	candidates := make([]RouteTarget, 0, len(r.Targets))
+	for _, target := range r.Targets {
 		if target.Disabled || target.ProviderRef == "" {
 			continue
 		}
@@ -25,7 +25,7 @@ func (s DefaultRouteSelector) SelectTarget(route Route, req ResolveRequest) (*Ro
 		candidates = append(candidates, target)
 	}
 	if len(candidates) == 0 {
-		return nil, &HTTPError{status: 502, msg: fmt.Sprintf("route %q has no eligible targets", route.ID)}
+		return nil, &HTTPError{status: 502, msg: fmt.Sprintf("route %q has no eligible targets", r.ID)}
 	}
 
 	var (
@@ -47,8 +47,8 @@ func (s DefaultRouteSelector) SelectTarget(route Route, req ResolveRequest) (*Ro
 		}
 	}
 
-	route.Policy.Defaults()
-	for _, group := range selectionOrder(route.Policy.Selection.Strategy, route.Policy.Fallback.Enabled, weighted, conditional, failover, other) {
+	r.Policy.Defaults()
+	for _, group := range selectionOrder(r.Policy.Selection.Strategy, r.Policy.Fallback.Enabled, weighted, conditional, failover, other) {
 		if len(group) == 0 {
 			continue
 		}
@@ -67,7 +67,7 @@ func (s DefaultRouteSelector) SelectTarget(route Route, req ResolveRequest) (*Ro
 		}
 	}
 
-	return nil, &HTTPError{status: 502, msg: fmt.Sprintf("route %q has no eligible targets", route.ID)}
+	return nil, &HTTPError{status: 502, msg: fmt.Sprintf("route %q has no eligible targets", r.ID)}
 }
 
 func selectionOrder(strategy RouteSelectionStrategy, allowFallback bool, weighted, conditional, failover, other []RouteTarget) [][]RouteTarget {
