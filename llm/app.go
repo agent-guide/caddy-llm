@@ -10,8 +10,8 @@ import (
 
 	"github.com/agent-guide/caddy-agent-gateway/llm/authmanager/credential"
 	"github.com/agent-guide/caddy-agent-gateway/llm/authmanager/manager"
-	configstoreIntf "github.com/agent-guide/caddy-agent-gateway/llm/configstore/intf"
-	configstoresqlite "github.com/agent-guide/caddy-agent-gateway/llm/configstore/sqlite"
+	configstoreIntf "github.com/agent-guide/caddy-agent-gateway/configstore/intf"
+	configstoresqlite "github.com/agent-guide/caddy-agent-gateway/configstore/sqlite"
 	"github.com/agent-guide/caddy-agent-gateway/llm/provider"
 )
 

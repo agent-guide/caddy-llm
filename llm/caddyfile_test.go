@@ -7,7 +7,7 @@ import (
 
 	"github.com/agent-guide/caddy-agent-gateway/llm/authmanager/credential"
 	"github.com/agent-guide/caddy-agent-gateway/llm/authmanager/manager"
-	configstoresqlite "github.com/agent-guide/caddy-agent-gateway/llm/configstore/sqlite"
+	configstoresqlite "github.com/agent-guide/caddy-agent-gateway/configstore/sqlite"
 	_ "github.com/agent-guide/caddy-agent-gateway/llm/provider/ollama"
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"

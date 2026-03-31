@@ -8,7 +8,7 @@ import (
 	"sync"
 
 	llm "github.com/agent-guide/caddy-agent-gateway/llm"
-	configstoreintf "github.com/agent-guide/caddy-agent-gateway/llm/configstore/intf"
+	configstoreintf "github.com/agent-guide/caddy-agent-gateway/configstore/intf"
 	"github.com/agent-guide/caddy-agent-gateway/llm/provider"
 )
 

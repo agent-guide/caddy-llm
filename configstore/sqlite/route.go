@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/agent-guide/caddy-agent-gateway/llm/configstore/intf"
+	"github.com/agent-guide/caddy-agent-gateway/configstore/intf"
 	"gorm.io/gorm"
 )
 

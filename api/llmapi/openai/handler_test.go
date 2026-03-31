@@ -12,7 +12,7 @@ import (
 
 	"github.com/agent-guide/caddy-agent-gateway/admin"
 	"github.com/agent-guide/caddy-agent-gateway/gateway"
-	configstoreintf "github.com/agent-guide/caddy-agent-gateway/llm/configstore/intf"
+	configstoreintf "github.com/agent-guide/caddy-agent-gateway/configstore/intf"
 	"github.com/cloudwego/eino/schema"
 	"gorm.io/gorm"
 

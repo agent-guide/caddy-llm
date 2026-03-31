@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/agent-guide/caddy-agent-gateway/llm/authmanager/credential"
-	"github.com/agent-guide/caddy-agent-gateway/llm/configstore/intf"
+	"github.com/agent-guide/caddy-agent-gateway/configstore/intf"
 	"github.com/google/uuid"
 )
 

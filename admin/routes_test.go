@@ -10,7 +10,7 @@ import (
 	"testing"
 
 	"github.com/agent-guide/caddy-agent-gateway/gateway"
-	configstoreintf "github.com/agent-guide/caddy-agent-gateway/llm/configstore/intf"
+	configstoreintf "github.com/agent-guide/caddy-agent-gateway/configstore/intf"
 	"gorm.io/gorm"
 )
 

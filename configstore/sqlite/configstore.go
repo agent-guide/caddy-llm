@@ -12,7 +12,7 @@ import (
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 
-	"github.com/agent-guide/caddy-agent-gateway/llm/configstore/intf"
+	"github.com/agent-guide/caddy-agent-gateway/configstore/intf"
 )
 
 type SQLiteConfigStore struct {
