@@ -121,7 +121,7 @@ func (s *testLocalAPIKeyStore) Get(_ context.Context, key string) (any, error) {
 func TestRouteCRUD(t *testing.T) {
 	handler := NewHandler(nil, &testConfigStore{
 		routeStore: &testRouteStore{items: map[string]*routepkg.Route{}},
-	}, nil)
+	}, nil, "", "")
 
 	createBody, err := json.Marshal(routepkg.Route{
 		ID:   "chat-prod",
@@ -165,7 +165,7 @@ func TestRouteCRUD(t *testing.T) {
 func TestLocalAPIKeyCRUD(t *testing.T) {
 	handler := NewHandler(nil, &testConfigStore{
 		localAPIKeyStore: &testLocalAPIKeyStore{items: map[string]*routepkg.LocalAPIKey{}},
-	}, nil)
+	}, nil, "", "")
 
 	body, err := json.Marshal(routepkg.LocalAPIKey{
 		Key:             "lk-test",

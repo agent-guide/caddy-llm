@@ -1,29 +1,32 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { DashboardHeader } from "@/components/dashboard-header";
 import { UserPanel } from "@/components/user-panel";
-
-// Stub user — replace with real auth context when backend is ready
-const STUB_USER = { username: "admin", isAdmin: true };
+import { getUsername } from "@/lib/auth";
 
 export function DashboardShell({ children }: { children: React.ReactNode }) {
   const [panelOpen, setPanelOpen] = useState(false);
-  const user = STUB_USER;
+  const [username, setUsername] = useState("admin");
+
+  useEffect(() => {
+    const u = getUsername();
+    if (u) setUsername(u);
+  }, []);
 
   return (
     <>
       <DashboardHeader
-        username={user.username}
-        isAdmin={user.isAdmin}
+        username={username}
+        isAdmin={true}
         onUserClick={() => setPanelOpen(true)}
       />
       {children}
       <UserPanel
         isOpen={panelOpen}
         onClose={() => setPanelOpen(false)}
-        username={user.username}
-        isAdmin={user.isAdmin}
+        username={username}
+        isAdmin={true}
       />
     </>
   );

@@ -13,29 +13,53 @@ import (
 
 // Handler handles Admin API requests under /admin/.
 type Handler struct {
-	authManager   *manager.Manager
-	configStore   intf.ConfigStorer
-	mux           *http.ServeMux
-	logger        *zap.Logger
-	loginSessions sync.Map // cliname -> *loginStatus
+	authManager      *manager.Manager
+	configStore      intf.ConfigStorer
+	mux              *http.ServeMux
+	logger           *zap.Logger
+	loginSessions    sync.Map // cliname -> *loginStatus
+	sessions         *sessionStore
+	adminUsername    string
+	adminPasswordHash string
 }
 
 // NewHandler constructs an admin Handler with the given auth manager.
 // logger may be nil (a no-op logger is used in that case).
-func NewHandler(authMgr *manager.Manager, configStore intf.ConfigStorer, logger *zap.Logger) *Handler {
+func NewHandler(authMgr *manager.Manager, configStore intf.ConfigStorer, logger *zap.Logger, adminUser, adminPasswordHash string) *Handler {
 	if logger == nil {
 		logger = zap.NewNop()
 	}
-	h := &Handler{authManager: authMgr, configStore: configStore, logger: logger}
+	h := &Handler{
+		authManager:       authMgr,
+		configStore:       configStore,
+		logger:            logger,
+		sessions:          newSessionStore(),
+		adminUsername:     adminUser,
+		adminPasswordHash: adminPasswordHash,
+	}
 	h.mux = http.NewServeMux()
 	for _, route := range h.Routes() {
-		h.mux.HandleFunc(route.Method+" "+route.Path, route.Handler)
+		handler := route.Handler
+		if route.RequireAuth {
+			handler = h.requireAuth(handler)
+		}
+		h.mux.HandleFunc(route.Method+" "+route.Path, handler)
 	}
 	return h
 }
 
-// ServeHTTP dispatches admin API requests.
+// ServeHTTP dispatches admin API requests, including CORS preflight handling.
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if origin := r.Header.Get("Origin"); origin != "" {
+		w.Header().Set("Access-Control-Allow-Origin", origin)
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type")
+		w.Header().Set("Access-Control-Max-Age", "86400")
+	}
+	if r.Method == "OPTIONS" {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
 	h.mux.ServeHTTP(w, r)
 }
 

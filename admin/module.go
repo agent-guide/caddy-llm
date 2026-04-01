@@ -19,7 +19,9 @@ func init() {
 
 // LLMAdminHandler is the Caddy HTTP middleware for the LLM Admin API.
 type LLMAdminHandler struct {
-	handler *Handler
+	handler           *Handler
+	AdminUsername     string `json:"admin_username,omitempty"`
+	AdminPasswordHash string `json:"admin_password_hash,omitempty"`
 }
 
 // CaddyModule returns the Caddy module information.
@@ -36,7 +38,7 @@ func (h *LLMAdminHandler) Provision(ctx caddy.Context) error {
 	if err != nil {
 		return fmt.Errorf("handle_llm_admin: get agent_gateway app: %w", err)
 	}
-	h.handler = NewHandler(app.AuthManager(), app.ConfigStore(), ctx.Logger(h))
+	h.handler = NewHandler(app.AuthManager(), app.ConfigStore(), ctx.Logger(h), h.AdminUsername, h.AdminPasswordHash)
 	return nil
 }
 
@@ -47,9 +49,29 @@ func (h LLMAdminHandler) ServeHTTP(w http.ResponseWriter, r *http.Request, next 
 }
 
 // UnmarshalCaddyfile implements caddyfile.Unmarshaler.
+//
+//	handle_llm_admin {
+//	    admin_user     <username>
+//	    admin_password_hash  <bcrypt-hash>
+//	}
 func (h *LLMAdminHandler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	for d.Next() {
-		// No sub-directives yet.
+		for d.NextBlock(0) {
+			switch d.Val() {
+			case "admin_user":
+				if !d.NextArg() {
+					return d.ArgErr()
+				}
+				h.AdminUsername = d.Val()
+			case "admin_password_hash":
+				if !d.NextArg() {
+					return d.ArgErr()
+				}
+				h.AdminPasswordHash = d.Val()
+			default:
+				return d.Errf("unrecognized handle_llm_admin option: %s", d.Val())
+			}
+		}
 	}
 	return nil
 }

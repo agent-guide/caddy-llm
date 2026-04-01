@@ -704,7 +704,7 @@ func TestAdminProvisionedRouteAndLocalAPIKeyDriveOpenAIHandler(t *testing.T) {
 		routeStore:       &testRouteStore{items: map[string]*routepkg.Route{}},
 		localAPIKeyStore: &testLocalAPIKeyStore{items: map[string]*routepkg.LocalAPIKey{}},
 	}
-	adminHandler := admin.NewHandler(nil, cfgStore, nil)
+	adminHandler := admin.NewHandler(nil, cfgStore, nil, "", "")
 
 	postJSON := func(path string, body any) {
 		t.Helper()

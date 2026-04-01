@@ -13,63 +13,69 @@ import (
 
 // Route defines an admin API route.
 type Route struct {
-	Method  string
-	Path    string
-	Handler http.HandlerFunc
+	Method      string
+	Path        string
+	Handler     http.HandlerFunc
+	RequireAuth bool
 }
 
 // Routes returns all admin API routes.
 func (h *Handler) Routes() []Route {
 	return []Route{
-		// Health
+		// Health — public
 		{Method: http.MethodGet, Path: "/admin/health", Handler: h.handleHealth},
 
+		// Auth — login is public; logout and me require a valid session
+		{Method: http.MethodPost, Path: "/admin/auth/login", Handler: h.handleLogin},
+		{Method: http.MethodPost, Path: "/admin/auth/logout", Handler: h.handleLogout, RequireAuth: true},
+		{Method: http.MethodGet, Path: "/admin/auth/me", Handler: h.handleMe, RequireAuth: true},
+
 		// Providers
-		{Method: http.MethodGet, Path: "/admin/providers", Handler: h.handleListProviders},
-		{Method: http.MethodPost, Path: "/admin/providers", Handler: h.handleCreateProvider},
-		{Method: http.MethodGet, Path: "/admin/providers/{id}", Handler: h.handleGetProvider},
-		{Method: http.MethodPut, Path: "/admin/providers/{id}", Handler: h.handleUpdateProvider},
-		{Method: http.MethodDelete, Path: "/admin/providers/{id}", Handler: h.handleDeleteProvider},
-		{Method: http.MethodGet, Path: "/admin/routes", Handler: h.handleListRoutes},
-		{Method: http.MethodPost, Path: "/admin/routes", Handler: h.handleCreateRoute},
-		{Method: http.MethodGet, Path: "/admin/routes/{id}", Handler: h.handleGetRoute},
-		{Method: http.MethodPut, Path: "/admin/routes/{id}", Handler: h.handleUpdateRoute},
-		{Method: http.MethodDelete, Path: "/admin/routes/{id}", Handler: h.handleDeleteRoute},
-		{Method: http.MethodGet, Path: "/admin/local_api_keys", Handler: h.handleListLocalAPIKeys},
-		{Method: http.MethodPost, Path: "/admin/local_api_keys", Handler: h.handleCreateLocalAPIKey},
-		{Method: http.MethodGet, Path: "/admin/local_api_keys/{key}", Handler: h.handleGetLocalAPIKey},
-		{Method: http.MethodPut, Path: "/admin/local_api_keys/{key}", Handler: h.handleUpdateLocalAPIKey},
-		{Method: http.MethodDelete, Path: "/admin/local_api_keys/{key}", Handler: h.handleDeleteLocalAPIKey},
-		{Method: http.MethodGet, Path: "/admin/credentials", Handler: h.handleListCredentials},
-		{Method: http.MethodGet, Path: "/admin/credentials/{id}", Handler: h.handleGetCredential},
-		{Method: http.MethodDelete, Path: "/admin/credentials/{id}", Handler: h.handleDeleteCredential},
+		{Method: http.MethodGet, Path: "/admin/providers", Handler: h.handleListProviders, RequireAuth: true},
+		{Method: http.MethodPost, Path: "/admin/providers", Handler: h.handleCreateProvider, RequireAuth: true},
+		{Method: http.MethodGet, Path: "/admin/providers/{id}", Handler: h.handleGetProvider, RequireAuth: true},
+		{Method: http.MethodPut, Path: "/admin/providers/{id}", Handler: h.handleUpdateProvider, RequireAuth: true},
+		{Method: http.MethodDelete, Path: "/admin/providers/{id}", Handler: h.handleDeleteProvider, RequireAuth: true},
+		{Method: http.MethodGet, Path: "/admin/routes", Handler: h.handleListRoutes, RequireAuth: true},
+		{Method: http.MethodPost, Path: "/admin/routes", Handler: h.handleCreateRoute, RequireAuth: true},
+		{Method: http.MethodGet, Path: "/admin/routes/{id}", Handler: h.handleGetRoute, RequireAuth: true},
+		{Method: http.MethodPut, Path: "/admin/routes/{id}", Handler: h.handleUpdateRoute, RequireAuth: true},
+		{Method: http.MethodDelete, Path: "/admin/routes/{id}", Handler: h.handleDeleteRoute, RequireAuth: true},
+		{Method: http.MethodGet, Path: "/admin/local_api_keys", Handler: h.handleListLocalAPIKeys, RequireAuth: true},
+		{Method: http.MethodPost, Path: "/admin/local_api_keys", Handler: h.handleCreateLocalAPIKey, RequireAuth: true},
+		{Method: http.MethodGet, Path: "/admin/local_api_keys/{key}", Handler: h.handleGetLocalAPIKey, RequireAuth: true},
+		{Method: http.MethodPut, Path: "/admin/local_api_keys/{key}", Handler: h.handleUpdateLocalAPIKey, RequireAuth: true},
+		{Method: http.MethodDelete, Path: "/admin/local_api_keys/{key}", Handler: h.handleDeleteLocalAPIKey, RequireAuth: true},
+		{Method: http.MethodGet, Path: "/admin/credentials", Handler: h.handleListCredentials, RequireAuth: true},
+		{Method: http.MethodGet, Path: "/admin/credentials/{id}", Handler: h.handleGetCredential, RequireAuth: true},
+		{Method: http.MethodDelete, Path: "/admin/credentials/{id}", Handler: h.handleDeleteCredential, RequireAuth: true},
 
 		// MCP
-		{Method: http.MethodGet, Path: "/admin/mcp/clients", Handler: h.handleListMCPClients},
-		{Method: http.MethodPost, Path: "/admin/mcp/clients", Handler: h.handleAddMCPClient},
-		{Method: http.MethodGet, Path: "/admin/mcp/clients/{id}", Handler: h.handleGetMCPClient},
-		{Method: http.MethodPut, Path: "/admin/mcp/clients/{id}", Handler: h.handleUpdateMCPClient},
-		{Method: http.MethodDelete, Path: "/admin/mcp/clients/{id}", Handler: h.handleRemoveMCPClient},
-		{Method: http.MethodGet, Path: "/admin/mcp/clients/{id}/tools", Handler: h.handleListMCPTools},
+		{Method: http.MethodGet, Path: "/admin/mcp/clients", Handler: h.handleListMCPClients, RequireAuth: true},
+		{Method: http.MethodPost, Path: "/admin/mcp/clients", Handler: h.handleAddMCPClient, RequireAuth: true},
+		{Method: http.MethodGet, Path: "/admin/mcp/clients/{id}", Handler: h.handleGetMCPClient, RequireAuth: true},
+		{Method: http.MethodPut, Path: "/admin/mcp/clients/{id}", Handler: h.handleUpdateMCPClient, RequireAuth: true},
+		{Method: http.MethodDelete, Path: "/admin/mcp/clients/{id}", Handler: h.handleRemoveMCPClient, RequireAuth: true},
+		{Method: http.MethodGet, Path: "/admin/mcp/clients/{id}/tools", Handler: h.handleListMCPTools, RequireAuth: true},
 
 		// Memory
-		{Method: http.MethodGet, Path: "/admin/memory/config", Handler: h.handleGetMemoryConfig},
-		{Method: http.MethodPut, Path: "/admin/memory/config", Handler: h.handleSetMemoryConfig},
-		{Method: http.MethodGet, Path: "/admin/memory/search", Handler: h.handleSearchMemory},
+		{Method: http.MethodGet, Path: "/admin/memory/config", Handler: h.handleGetMemoryConfig, RequireAuth: true},
+		{Method: http.MethodPut, Path: "/admin/memory/config", Handler: h.handleSetMemoryConfig, RequireAuth: true},
+		{Method: http.MethodGet, Path: "/admin/memory/search", Handler: h.handleSearchMemory, RequireAuth: true},
 
 		// Agents
-		{Method: http.MethodGet, Path: "/admin/agents", Handler: h.handleListAgents},
-		{Method: http.MethodPost, Path: "/admin/agents", Handler: h.handleCreateAgent},
-		{Method: http.MethodGet, Path: "/admin/agents/{id}", Handler: h.handleGetAgent},
-		{Method: http.MethodPut, Path: "/admin/agents/{id}", Handler: h.handleUpdateAgent},
-		{Method: http.MethodDelete, Path: "/admin/agents/{id}", Handler: h.handleDeleteAgent},
+		{Method: http.MethodGet, Path: "/admin/agents", Handler: h.handleListAgents, RequireAuth: true},
+		{Method: http.MethodPost, Path: "/admin/agents", Handler: h.handleCreateAgent, RequireAuth: true},
+		{Method: http.MethodGet, Path: "/admin/agents/{id}", Handler: h.handleGetAgent, RequireAuth: true},
+		{Method: http.MethodPut, Path: "/admin/agents/{id}", Handler: h.handleUpdateAgent, RequireAuth: true},
+		{Method: http.MethodDelete, Path: "/admin/agents/{id}", Handler: h.handleDeleteAgent, RequireAuth: true},
 
 		// Metrics
-		{Method: http.MethodGet, Path: "/admin/metrics", Handler: h.handleMetrics},
+		{Method: http.MethodGet, Path: "/admin/metrics", Handler: h.handleMetrics, RequireAuth: true},
 
 		// CLI Login
-		{Method: http.MethodPost, Path: "/admin/clilogin/{cliname}", Handler: h.handleCLILogin},
-		{Method: http.MethodGet, Path: "/admin/clilogin/{cliname}/status", Handler: h.handleCLILoginStatus},
+		{Method: http.MethodPost, Path: "/admin/clilogin/{cliname}", Handler: h.handleCLILogin, RequireAuth: true},
+		{Method: http.MethodGet, Path: "/admin/clilogin/{cliname}/status", Handler: h.handleCLILoginStatus, RequireAuth: true},
 	}
 }
 

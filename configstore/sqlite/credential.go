@@ -11,7 +11,9 @@ import (
 )
 
 type credentialRecord struct {
-	sqliteJSONRecord
+	ID        string    `gorm:"primaryKey"`
+	Tag       string    `gorm:"index;not null"`
+	Data      string    `gorm:"type:text;not null"`
 	CreatedAt time.Time `gorm:"autoCreateTime"`
 	UpdatedAt time.Time `gorm:"autoUpdateTime"`
 }

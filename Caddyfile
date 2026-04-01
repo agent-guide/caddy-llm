@@ -8,10 +8,18 @@
 	admin localhost:2019
 
 	agent_gateway {
-		provider openai
-		provider anthropic
+		provider openai {
+			default_model gpt-4.1
+		}
+
+		config_store sqlite {
+			path ./data/configstore.db
+		}
 
 		route openai-chat {
+			require_local_api_key
+			allowed_model gpt-4.1
+			allowed_model gpt-4.1-mini
 			target openai
 		}
 	}
@@ -35,6 +43,9 @@ localhost:8082 {
 
 	# Admin routes
 	route /admin/* {
-		handle_llm_admin
+		handle_llm_admin {
+			admin_user default
+			admin_password_hash dummy
+		}
 	}
 }

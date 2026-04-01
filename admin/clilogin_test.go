@@ -45,7 +45,7 @@ func TestCLILoginResolvesAuthenticatorAndRegistersCredential(t *testing.T) {
 		},
 	})
 
-	handler := NewHandler(authMgr, nil, nil)
+	handler := NewHandler(authMgr, nil, nil, "", "")
 	req := httptest.NewRequest(http.MethodPost, "/admin/clilogin/codex", nil)
 	rec := httptest.NewRecorder()
 
@@ -70,7 +70,7 @@ func TestCLILoginResolvesAuthenticatorAndRegistersCredential(t *testing.T) {
 }
 
 func TestCLILoginReturnsNotFoundForUnknownCliname(t *testing.T) {
-	handler := NewHandler(manager.NewManager(nil, nil, nil), nil, nil)
+	handler := NewHandler(manager.NewManager(nil, nil, nil), nil, nil, "", "")
 	req := httptest.NewRequest(http.MethodPost, "/admin/clilogin/unknown", nil)
 	rec := httptest.NewRecorder()
 
@@ -94,7 +94,7 @@ func TestCLILoginStatusReportsCompletion(t *testing.T) {
 		},
 	})
 
-	handler := NewHandler(authMgr, nil, nil)
+	handler := NewHandler(authMgr, nil, nil, "", "")
 
 	startReq := httptest.NewRequest(http.MethodPost, "/admin/clilogin/codex", nil)
 	startRec := httptest.NewRecorder()
