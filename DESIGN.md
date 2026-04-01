@@ -24,8 +24,8 @@ Client
   |
   v
 HTTP handlers
-  - http.handlers.llm_api.openai
-  - http.handlers.llm_api.anthropic
+  - http.handlers.openai
+  - http.handlers.anthropic
   - http.handlers.llm_admin
   |
   v
@@ -80,8 +80,8 @@ handle_llm_api <dialect> {
 
 The handler itself is selected by dialect:
 
-- `http.handlers.llm_api.openai`
-- `http.handlers.llm_api.anthropic`
+- `http.handlers.openai`
+- `http.handlers.anthropic`
 
 The handler does not define route policy inline. Instead, it binds to a `route_id`, then asks the shared gateway runtime to resolve the route and target provider.
 

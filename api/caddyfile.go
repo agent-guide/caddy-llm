@@ -48,7 +48,7 @@ func parseHandleLLMAPI(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, err
 		return nil, d.Err("route_id is required")
 	}
 
-	moduleID := "http.handlers.llm_api." + apiName
+	moduleID := "http.handlers." + apiName
 	mod, err := caddy.GetModule(moduleID)
 	if err != nil {
 		return nil, d.Errf("getting module named '%s': %v", moduleID, err)

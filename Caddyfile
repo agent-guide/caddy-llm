@@ -1,7 +1,7 @@
 # Caddy Agent Gateway
 # Caddy App module ID: "agent_gateway"
 # HTTP handler module IDs:
-# - "http.handlers.llm_api.openai" / "http.handlers.llm_api.anthropic" (Caddyfile directive: "handle_llm_api")
+# - "http.handlers.openai" / "http.handlers.anthropic" (Caddyfile directive: "handle_llm_api")
 # - "http.handlers.llm_admin" (Caddyfile directive: "handle_llm_admin")
 
 {

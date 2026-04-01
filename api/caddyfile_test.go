@@ -7,6 +7,8 @@ import (
 	api "github.com/agent-guide/caddy-agent-gateway/api"
 	_ "github.com/agent-guide/caddy-agent-gateway/api/llmapi/openai"
 	openaiapi "github.com/agent-guide/caddy-agent-gateway/api/llmapi/openai"
+	_ "github.com/caddyserver/caddy/v2/modules/standard"
+	caddyfileadapter "github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 	"github.com/caddyserver/caddy/v2/caddyconfig/caddyfile"
 	"github.com/caddyserver/caddy/v2/caddyconfig/httpcaddyfile"
 )
@@ -54,5 +56,31 @@ func TestParseHandleLLMAPIRejectsUnknownSubdirective(t *testing.T) {
 	_, err := api.ParseHandleLLMAPIForTest(httpcaddyfile.Helper{Dispenser: d})
 	if err == nil || !strings.Contains(err.Error(), "unknown subdirective: model") {
 		t.Fatalf("expected unknown subdirective error, got %v", err)
+	}
+}
+
+func TestHandleLLMAPIAdaptUsesLoadableHandlerNames(t *testing.T) {
+	input := []byte(`
+		:8080 {
+			route /v1/* {
+				handle_llm_api openai {
+					route_id chat-prod
+				}
+			}
+		}
+	`)
+
+	adapter := caddyfileadapter.Adapter{ServerType: httpcaddyfile.ServerType{}}
+	adapted, _, err := adapter.Adapt(input, nil)
+	if err != nil {
+		t.Fatalf("caddy.Adapt() error = %v", err)
+	}
+
+	json := string(adapted)
+	if !strings.Contains(json, `"handler":"openai"`) {
+		t.Fatalf("adapted config missing openai handler: %s", json)
+	}
+	if strings.Contains(json, `"handler":"llm_api.openai"`) {
+		t.Fatalf("adapted config used non-loadable handler name: %s", json)
 	}
 }
