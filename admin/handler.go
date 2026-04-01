@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"sync"
 
+	"github.com/agent-guide/caddy-agent-gateway/internal/utils"
 	"go.uber.org/zap"
 
 	"github.com/agent-guide/caddy-agent-gateway/configstore/intf"
@@ -49,15 +50,24 @@ func NewHandler(cliauthMgr *manager.Manager, configStore intf.ConfigStorer, logg
 
 // ServeHTTP dispatches admin API requests, including CORS preflight handling.
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	lrw := utils.NewLoggingResponseWriter(w)
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			utils.LogHTTPError(h.logger, "admin request panicked", r, http.StatusInternalServerError, nil, zap.Any("panic", recovered))
+			http.Error(lrw, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+		}
+		utils.LogHTTPResponseError(h.logger, "admin request failed", r, lrw)
+	}()
+
 	if origin := r.Header.Get("Origin"); origin != "" {
-		w.Header().Set("Access-Control-Allow-Origin", origin)
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type")
-		w.Header().Set("Access-Control-Max-Age", "86400")
+		lrw.Header().Set("Access-Control-Allow-Origin", origin)
+		lrw.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+		lrw.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type")
+		lrw.Header().Set("Access-Control-Max-Age", "86400")
 	}
 	if r.Method == "OPTIONS" {
-		w.WriteHeader(http.StatusNoContent)
+		lrw.WriteHeader(http.StatusNoContent)
 		return
 	}
-	h.mux.ServeHTTP(w, r)
+	h.mux.ServeHTTP(lrw, r)
 }

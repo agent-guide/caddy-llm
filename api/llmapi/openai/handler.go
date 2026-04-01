@@ -1,7 +1,6 @@
 package openai
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -17,6 +16,7 @@ import (
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 	"github.com/cloudwego/eino/schema"
+	"go.uber.org/zap"
 )
 
 // Handler handles OpenAI-format API requests (/v1/chat/completions, etc.).
@@ -24,6 +24,7 @@ type Handler struct {
 	RouteID string `json:"route_id,omitempty"`
 
 	gateway *gateway.AgentGateway
+	logger  *zap.Logger
 }
 
 func init() {
@@ -40,7 +41,7 @@ func (Handler) CaddyModule() caddy.ModuleInfo {
 
 // NewHandler creates a Handler.
 func NewHandler() *Handler {
-	return &Handler{}
+	return &Handler{logger: zap.NewNop()}
 }
 
 func (h *Handler) SetRouteID(routeID string) {
@@ -52,6 +53,7 @@ func (h *Handler) SetAgentGateway(gw *gateway.AgentGateway) {
 }
 
 func (h *Handler) Provision(ctx caddy.Context) error {
+	h.logger = ctx.Logger(h)
 	app, err := gateway.GetApp(ctx)
 	if err != nil {
 		return fmt.Errorf("openai llm api: get agent_gateway app: %w", err)
@@ -73,19 +75,28 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyht
 // ServeLLMApi handles OpenAI-compatible API requests.
 func (h *Handler) ServeLLMApi(w http.ResponseWriter, r *http.Request) error {
 	if r.Method != http.MethodPost {
-		_ = utils.WriteError(w, http.StatusMethodNotAllowed, "method not allowed")
+		_ = utils.WriteLoggedError(h.logger, w, r, http.StatusMethodNotAllowed, "method not allowed", fmt.Errorf("method %s not allowed", r.Method),
+			zap.String("protocol", "openai"),
+			zap.String("route_id", h.RouteID),
+		)
 		return nil
 	}
 
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
-		_ = utils.WriteError(w, http.StatusBadRequest, "failed to read request body")
+		_ = utils.WriteLoggedError(h.logger, w, r, http.StatusBadRequest, "failed to read request body", fmt.Errorf("read request body: %w", err),
+			zap.String("protocol", "openai"),
+			zap.String("route_id", h.RouteID),
+		)
 		return nil
 	}
 
 	var req ChatCompletionRequest
 	if err := json.Unmarshal(body, &req); err != nil {
-		_ = utils.WriteError(w, http.StatusBadRequest, fmt.Sprintf("invalid request: %s", err))
+		_ = utils.WriteLoggedError(h.logger, w, r, http.StatusBadRequest, fmt.Sprintf("invalid request: %s", err), fmt.Errorf("decode request body: %w", err),
+			zap.String("protocol", "openai"),
+			zap.String("route_id", h.RouteID),
+		)
 		return nil
 	}
 
@@ -98,28 +109,42 @@ func (h *Handler) ServeLLMApi(w http.ResponseWriter, r *http.Request) error {
 		Stream:      req.Stream,
 	})
 	if err != nil {
-		_ = utils.WriteError(w, api.StatusCode(err), err.Error())
+		status := api.StatusCode(err)
+		_ = utils.WriteLoggedError(h.logger, w, r, status, err.Error(), fmt.Errorf("resolve provider: %w", err),
+			zap.String("protocol", "openai"),
+			zap.String("route_id", h.RouteID),
+			zap.String("model", genReq.Model),
+		)
 		return nil
 	}
 
 	if req.Stream {
-		h.serveStream(w, r.Context(), resolved.Provider, genReq)
+		h.serveStream(w, r, resolved.Provider, genReq)
 		return nil
 	}
 
 	resp, err := resolved.Provider.Generate(r.Context(), genReq)
 	if err != nil {
-		_ = utils.WriteError(w, http.StatusBadGateway, err.Error())
+		_ = utils.WriteLoggedError(h.logger, w, r, http.StatusBadGateway, err.Error(), fmt.Errorf("generate response: %w", err),
+			zap.String("protocol", "openai"),
+			zap.String("route_id", h.RouteID),
+			zap.String("model", genReq.Model),
+		)
 		return nil
 	}
 	_ = utils.WriteJSON(w, http.StatusOK, conv.FromInternal(resp, genReq.Model))
 	return nil
 }
 
-func (h *Handler) serveStream(w http.ResponseWriter, ctx context.Context, prov provider.Provider, genReq *provider.GenerateRequest) {
+func (h *Handler) serveStream(w http.ResponseWriter, r *http.Request, prov provider.Provider, genReq *provider.GenerateRequest) {
+	ctx := r.Context()
 	stream, err := prov.Stream(ctx, genReq)
 	if err != nil {
-		_ = utils.WriteError(w, http.StatusBadGateway, err.Error())
+		_ = utils.WriteLoggedError(h.logger, w, r, http.StatusBadGateway, err.Error(), fmt.Errorf("start stream: %w", err),
+			zap.String("protocol", "openai"),
+			zap.String("route_id", h.RouteID),
+			zap.String("model", genReq.Model),
+		)
 		return
 	}
 	defer stream.Close()
@@ -136,11 +161,21 @@ func (h *Handler) serveStream(w http.ResponseWriter, ctx context.Context, prov p
 			break
 		}
 		if err != nil {
+			utils.LogHTTPError(h.logger, "http request failed", r, http.StatusOK, fmt.Errorf("receive stream chunk: %w", err),
+				zap.String("protocol", "openai"),
+				zap.String("route_id", h.RouteID),
+				zap.String("model", genReq.Model),
+			)
 			break
 		}
 
 		payload, err := json.Marshal(toStreamChunk(genReq.Model, chunk))
 		if err != nil {
+			utils.LogHTTPError(h.logger, "http request failed", r, http.StatusOK, fmt.Errorf("marshal stream chunk: %w", err),
+				zap.String("protocol", "openai"),
+				zap.String("route_id", h.RouteID),
+				zap.String("model", genReq.Model),
+			)
 			break
 		}
 		fmt.Fprintf(w, "data: %s\n\n", payload)
