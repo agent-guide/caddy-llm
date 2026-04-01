@@ -93,7 +93,10 @@ func (s *sqliteJSONStore) Save(ctx context.Context, id string, tag string, obj a
 	}
 	if err := s.db.WithContext(ctx).
 		Table(s.table).
-		Clauses(clause.OnConflict{UpdateAll: true}).
+		Clauses(clause.OnConflict{
+			Columns:   []clause.Column{{Name: s.idField}},
+			DoUpdates: clause.AssignmentColumns([]string{s.tagField, s.dataField}),
+		}).
 		Create(s.dbRecord(row)).Error; err != nil {
 		return "", err
 	}
