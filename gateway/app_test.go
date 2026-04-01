@@ -3,8 +3,8 @@ package gateway
 import (
 	"testing"
 
-	"github.com/agent-guide/caddy-agent-gateway/llm/authmanager/authenticator"
-	"github.com/agent-guide/caddy-agent-gateway/llm/authmanager/manager"
+	"github.com/agent-guide/caddy-agent-gateway/llm/cliauth/authenticator"
+	"github.com/agent-guide/caddy-agent-gateway/llm/cliauth/manager"
 	"github.com/caddyserver/caddy/v2"
 )
 

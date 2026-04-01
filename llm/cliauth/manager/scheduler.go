@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/agent-guide/caddy-agent-gateway/llm/authmanager/credential"
+	"github.com/agent-guide/caddy-agent-gateway/llm/cliauth/credential"
 )
 
 // schedulerStrategy identifies the built-in routing semantics.

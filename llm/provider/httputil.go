@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/agent-guide/caddy-agent-gateway/llm/authmanager/credential"
+	"github.com/agent-guide/caddy-agent-gateway/llm/cliauth/credential"
 )
 
 type credentialKey struct{}

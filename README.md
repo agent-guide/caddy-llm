@@ -33,7 +33,7 @@ The current codebase is already usable as a route-oriented LLM gateway. It also 
 - `llm/provider/`
   - Shared provider interfaces and provider implementations
   - Implemented providers: `openai`, `anthropic`, `gemini`, `ollama`, `openrouter`
-- `llm/authmanager/`
+- `llm/cliauth/`
   - Credential manager and provider-specific authenticators
   - Implemented authenticators: `codex`, `claude`, `gemini`
 - `configstore/sqlite/`

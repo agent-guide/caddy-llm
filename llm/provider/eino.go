@@ -6,7 +6,7 @@ import (
 	einomodel "github.com/cloudwego/eino/components/model"
 	einoschema "github.com/cloudwego/eino/schema"
 
-	"github.com/agent-guide/caddy-agent-gateway/llm/authmanager/credential"
+	"github.com/agent-guide/caddy-agent-gateway/llm/cliauth/credential"
 )
 
 type ChatRequestState struct {

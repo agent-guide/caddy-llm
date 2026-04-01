@@ -7,19 +7,19 @@ import (
 
 	"go.uber.org/zap"
 
-	"github.com/agent-guide/caddy-agent-gateway/llm/authmanager/manager"
 	"github.com/agent-guide/caddy-agent-gateway/configstore/intf"
+	"github.com/agent-guide/caddy-agent-gateway/llm/cliauth/manager"
 )
 
 // Handler handles Admin API requests under /admin/.
 type Handler struct {
-	authManager      *manager.Manager
-	configStore      intf.ConfigStorer
-	mux              *http.ServeMux
-	logger           *zap.Logger
-	loginSessions    sync.Map // cliname -> *loginStatus
-	sessions         *sessionStore
-	adminUsername    string
+	authManager       *manager.Manager
+	configStore       intf.ConfigStorer
+	mux               *http.ServeMux
+	logger            *zap.Logger
+	loginSessions     sync.Map // cliname -> *loginStatus
+	sessions          *sessionStore
+	adminUsername     string
 	adminPasswordHash string
 }
 

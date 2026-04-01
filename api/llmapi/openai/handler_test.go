@@ -17,8 +17,8 @@ import (
 	"github.com/cloudwego/eino/schema"
 	"gorm.io/gorm"
 
-	"github.com/agent-guide/caddy-agent-gateway/llm/authmanager/credential"
-	"github.com/agent-guide/caddy-agent-gateway/llm/authmanager/manager"
+	"github.com/agent-guide/caddy-agent-gateway/llm/cliauth/credential"
+	"github.com/agent-guide/caddy-agent-gateway/llm/cliauth/manager"
 	"github.com/agent-guide/caddy-agent-gateway/llm/provider"
 )
 
