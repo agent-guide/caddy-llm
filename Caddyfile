@@ -25,7 +25,17 @@
 	}
 }
 
-127.0.0.1:8082 {
+http://127.0.0.1:8081 {
+	# Admin routes
+	route /admin/* {
+		agent_gateway_admin {
+			admin_user default
+			admin_password_hash $2a$14$Qxwz94t//fcaF.lyVzsIee0ZZuSNgS841WmLUo/NKGN5LlQzNg5Me # dummy
+		}
+	}
+}
+
+http://127.0.0.1:8082 {
 	log {
 		output stderr
 		format console
@@ -38,14 +48,6 @@
 		}
 		handle_llm_api anthropic {
 			route_id openai-chat
-		}
-	}
-
-	# Admin routes
-	route /admin/* {
-		agent_gateway_admin {
-			admin_user default
-			admin_password_hash dummy
 		}
 	}
 }
