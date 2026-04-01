@@ -26,7 +26,7 @@ Client
 HTTP handlers
   - http.handlers.openai
   - http.handlers.anthropic
-  - http.handlers.llm_admin
+  - http.handlers.agent_gateway_admin
   |
   v
 agent_gateway Caddy app
@@ -93,7 +93,7 @@ This separation is deliberate:
 
 ### 4.3 `admin/`: Operational Control Surface
 
-The `admin/` package registers `handle_llm_admin` with module ID `http.handlers.llm_admin`.
+The `admin/` package registers `agent_gateway_admin` with module ID `http.handlers.agent_gateway_admin`.
 
 Today it exposes working endpoints for:
 
@@ -308,7 +308,7 @@ For a route or provider change:
 
 ```text
 HTTP admin request
-  -> handle_llm_admin
+  -> agent_gateway_admin
   -> config store CRUD
   -> later request path reloads latest stored record
 ```

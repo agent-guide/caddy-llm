@@ -13,48 +13,48 @@ import (
 )
 
 func init() {
-	caddy.RegisterModule(LLMAdminHandler{})
-	httpcaddyfile.RegisterHandlerDirective("handle_llm_admin", parseHandleLLMAdmin)
+	caddy.RegisterModule(AgentGatewayAdminHandler{})
+	httpcaddyfile.RegisterHandlerDirective("agent_gateway_admin", parseAgentGatewayAdmin)
 }
 
-// LLMAdminHandler is the Caddy HTTP middleware for the LLM Admin API.
-type LLMAdminHandler struct {
+// AgentGatewayAdminHandler is the Caddy HTTP middleware for the agent gateway admin API.
+type AgentGatewayAdminHandler struct {
 	handler           *Handler
 	AdminUsername     string `json:"admin_username,omitempty"`
 	AdminPasswordHash string `json:"admin_password_hash,omitempty"`
 }
 
 // CaddyModule returns the Caddy module information.
-func (LLMAdminHandler) CaddyModule() caddy.ModuleInfo {
+func (AgentGatewayAdminHandler) CaddyModule() caddy.ModuleInfo {
 	return caddy.ModuleInfo{
-		ID:  "http.handlers.llm_admin",
-		New: func() caddy.Module { return new(LLMAdminHandler) },
+		ID:  "http.handlers.agent_gateway_admin",
+		New: func() caddy.Module { return new(AgentGatewayAdminHandler) },
 	}
 }
 
 // Provision sets up the handler.
-func (h *LLMAdminHandler) Provision(ctx caddy.Context) error {
+func (h *AgentGatewayAdminHandler) Provision(ctx caddy.Context) error {
 	app, err := gateway.GetApp(ctx)
 	if err != nil {
-		return fmt.Errorf("handle_llm_admin: get agent_gateway app: %w", err)
+		return fmt.Errorf("agent_gateway_admin: get agent_gateway app: %w", err)
 	}
 	h.handler = NewHandler(app.AuthManager(), app.ConfigStore(), ctx.Logger(h), h.AdminUsername, h.AdminPasswordHash)
 	return nil
 }
 
 // ServeHTTP implements caddyhttp.MiddlewareHandler.
-func (h LLMAdminHandler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
+func (h AgentGatewayAdminHandler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
 	h.handler.ServeHTTP(w, r)
 	return nil
 }
 
 // UnmarshalCaddyfile implements caddyfile.Unmarshaler.
 //
-//	handle_llm_admin {
+//	agent_gateway_admin {
 //	    admin_user     <username>
 //	    admin_password_hash  <bcrypt-hash>
 //	}
-func (h *LLMAdminHandler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
+func (h *AgentGatewayAdminHandler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 	for d.Next() {
 		for d.NextBlock(0) {
 			switch d.Val() {
@@ -69,15 +69,20 @@ func (h *LLMAdminHandler) UnmarshalCaddyfile(d *caddyfile.Dispenser) error {
 				}
 				h.AdminPasswordHash = d.Val()
 			default:
-				return d.Errf("unrecognized handle_llm_admin option: %s", d.Val())
+				return d.Errf("unrecognized agent_gateway_admin option: %s", d.Val())
 			}
 		}
 	}
 	return nil
 }
 
-func parseHandleLLMAdmin(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error) {
-	var handler LLMAdminHandler
+// ParseAgentGatewayAdminForTest exposes the parser to external tests.
+func ParseAgentGatewayAdminForTest(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error) {
+	return parseAgentGatewayAdmin(h)
+}
+
+func parseAgentGatewayAdmin(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, error) {
+	var handler AgentGatewayAdminHandler
 	if err := handler.UnmarshalCaddyfile(h.Dispenser); err != nil {
 		return nil, err
 	}
@@ -85,8 +90,8 @@ func parseHandleLLMAdmin(h httpcaddyfile.Helper) (caddyhttp.MiddlewareHandler, e
 }
 
 var (
-	_ caddy.Module                = (*LLMAdminHandler)(nil)
-	_ caddy.Provisioner           = (*LLMAdminHandler)(nil)
-	_ caddyhttp.MiddlewareHandler = (*LLMAdminHandler)(nil)
-	_ caddyfile.Unmarshaler       = (*LLMAdminHandler)(nil)
+	_ caddy.Module                = (*AgentGatewayAdminHandler)(nil)
+	_ caddy.Provisioner           = (*AgentGatewayAdminHandler)(nil)
+	_ caddyhttp.MiddlewareHandler = (*AgentGatewayAdminHandler)(nil)
+	_ caddyfile.Unmarshaler       = (*AgentGatewayAdminHandler)(nil)
 )

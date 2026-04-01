@@ -10,7 +10,7 @@ The current codebase is already usable as a route-oriented LLM gateway. It also 
 - HTTP handlers:
   - `handle_llm_api openai`
   - `handle_llm_api anthropic`
-  - `handle_llm_admin`
+  - `agent_gateway_admin`
 - Provider modules under `llm.providers.*`
 - Authenticator modules under `llm.authenticators.*`
 - SQLite-backed config storage for providers, routes, credentials, and local API keys
@@ -28,7 +28,7 @@ The current codebase is already usable as a route-oriented LLM gateway. It also 
   - Registers `handle_llm_api`
   - Includes OpenAI-compatible and Anthropic-compatible ingress handlers
 - `admin/`
-  - Registers `handle_llm_admin`
+  - Registers `agent_gateway_admin`
   - Exposes operational endpoints under `/admin/*`
 - `llm/provider/`
   - Shared provider interfaces and provider implementations
@@ -94,7 +94,7 @@ Minimal `Caddyfile`:
     }
 
     route /admin/* {
-        handle_llm_admin
+        agent_gateway_admin
     }
 }
 ```
@@ -191,7 +191,7 @@ If no `authenticator` block is declared, no CLI login flow is enabled.
 
 ## Admin API
 
-The admin surface is mounted through `handle_llm_admin` and currently includes:
+The admin surface is mounted through `agent_gateway_admin` and currently includes:
 
 - `GET /admin/health`
 - Provider CRUD:
