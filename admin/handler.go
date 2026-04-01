@@ -17,7 +17,7 @@ type Handler struct {
 	configStore       intf.ConfigStorer
 	mux               *http.ServeMux
 	logger            *zap.Logger
-	loginSessions     sync.Map // cliname -> *loginStatus
+	cliAuthSessions   sync.Map // cliname -> cliAuthStatus
 	sessions          *sessionStore
 	adminUsername     string
 	adminPasswordHash string

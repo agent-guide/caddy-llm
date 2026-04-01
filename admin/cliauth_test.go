@@ -32,7 +32,7 @@ func (a *testAuthenticator) RefreshLead(context.Context, *credential.Credential)
 	return nil, nil
 }
 
-func TestCLILoginResolvesAuthenticatorAndRegistersCredential(t *testing.T) {
+func TestCLIAuthResolvesAuthenticatorAndRegistersCredential(t *testing.T) {
 	authMgr := manager.NewManager(nil, nil, nil)
 	authMgr.RegisterAuthenticator("codex", &testAuthenticator{
 		provider: "openai",
@@ -46,7 +46,7 @@ func TestCLILoginResolvesAuthenticatorAndRegistersCredential(t *testing.T) {
 	})
 
 	handler := NewHandler(authMgr, nil, nil, "", "")
-	req := httptest.NewRequest(http.MethodPost, "/admin/clilogin/codex", nil)
+	req := httptest.NewRequest(http.MethodPost, "/admin/cliauth/codex", nil)
 	rec := httptest.NewRecorder()
 
 	handler.ServeHTTP(rec, req)
@@ -69,9 +69,9 @@ func TestCLILoginResolvesAuthenticatorAndRegistersCredential(t *testing.T) {
 	t.Fatal("credential was not registered")
 }
 
-func TestCLILoginReturnsNotFoundForUnknownCliname(t *testing.T) {
+func TestCLIAuthReturnsNotFoundForUnknownCliname(t *testing.T) {
 	handler := NewHandler(manager.NewManager(nil, nil, nil), nil, nil, "", "")
-	req := httptest.NewRequest(http.MethodPost, "/admin/clilogin/unknown", nil)
+	req := httptest.NewRequest(http.MethodPost, "/admin/cliauth/unknown", nil)
 	rec := httptest.NewRecorder()
 
 	handler.ServeHTTP(rec, req)
@@ -81,7 +81,7 @@ func TestCLILoginReturnsNotFoundForUnknownCliname(t *testing.T) {
 	}
 }
 
-func TestCLILoginStatusReportsCompletion(t *testing.T) {
+func TestCLIAuthStatusReportsCompletion(t *testing.T) {
 	authMgr := manager.NewManager(nil, nil, nil)
 	authMgr.RegisterAuthenticator("codex", &testAuthenticator{
 		provider: "openai",
@@ -96,7 +96,7 @@ func TestCLILoginStatusReportsCompletion(t *testing.T) {
 
 	handler := NewHandler(authMgr, nil, nil, "", "")
 
-	startReq := httptest.NewRequest(http.MethodPost, "/admin/clilogin/codex", nil)
+	startReq := httptest.NewRequest(http.MethodPost, "/admin/cliauth/codex", nil)
 	startRec := httptest.NewRecorder()
 	handler.ServeHTTP(startRec, startReq)
 	if startRec.Code != http.StatusAccepted {
@@ -105,14 +105,14 @@ func TestCLILoginStatusReportsCompletion(t *testing.T) {
 
 	deadline := time.Now().Add(500 * time.Millisecond)
 	for time.Now().Before(deadline) {
-		statusReq := httptest.NewRequest(http.MethodGet, "/admin/clilogin/codex/status", nil)
+		statusReq := httptest.NewRequest(http.MethodGet, "/admin/cliauth/codex/status", nil)
 		statusRec := httptest.NewRecorder()
 		handler.ServeHTTP(statusRec, statusReq)
 		if statusRec.Code != http.StatusOK {
 			t.Fatalf("unexpected status code: got %d want %d", statusRec.Code, http.StatusOK)
 		}
 
-		var status loginStatus
+		var status cliAuthStatus
 		if err := json.NewDecoder(statusRec.Body).Decode(&status); err != nil {
 			t.Fatalf("decode status response: %v", err)
 		}
@@ -129,5 +129,5 @@ func TestCLILoginStatusReportsCompletion(t *testing.T) {
 		time.Sleep(10 * time.Millisecond)
 	}
 
-	t.Fatal("login status did not reach succeeded")
+	t.Fatal("cli auth status did not reach succeeded")
 }

@@ -18,7 +18,7 @@ type credentialRecord struct {
 	UpdatedAt time.Time `gorm:"autoUpdateTime"`
 }
 
-func (credentialRecord) TableName() string { return "credentials" }
+func (credentialRecord) TableName() string { return "cliauth_credentials" }
 
 // CredentialStore wraps RDBStore and implements intf.CredentialStorer.
 type CredentialStore struct {

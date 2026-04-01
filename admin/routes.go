@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"net/http"
 
-	routepkg "github.com/agent-guide/caddy-agent-gateway/gateway/route"
 	"github.com/agent-guide/caddy-agent-gateway/configstore/intf"
+	routepkg "github.com/agent-guide/caddy-agent-gateway/gateway/route"
 	"gorm.io/gorm"
 )
 
@@ -73,9 +73,9 @@ func (h *Handler) Routes() []Route {
 		// Metrics
 		{Method: http.MethodGet, Path: "/admin/metrics", Handler: h.handleMetrics, RequireAuth: true},
 
-		// CLI Login
-		{Method: http.MethodPost, Path: "/admin/clilogin/{cliname}", Handler: h.handleCLILogin, RequireAuth: true},
-		{Method: http.MethodGet, Path: "/admin/clilogin/{cliname}/status", Handler: h.handleCLILoginStatus, RequireAuth: true},
+		// CLI Auth
+		{Method: http.MethodPost, Path: "/admin/cliauth/{cliname}", Handler: h.handleCLIAuth, RequireAuth: true},
+		{Method: http.MethodGet, Path: "/admin/cliauth/{cliname}/status", Handler: h.handleCLIAuthStatus, RequireAuth: true},
 	}
 }
 

@@ -320,13 +320,13 @@ This is why the project can support operational changes without treating the Cad
 CLI login flow:
 
 ```text
-POST /admin/clilogin/{cliname}
+POST /admin/cliauth/{cliname}
   -> lookup authenticator
   -> start async login goroutine
   -> authenticator.Login()
   -> auth manager Register()
   -> persist credential
-  -> poll /admin/clilogin/{cliname}/status
+  -> poll /admin/cliauth/{cliname}/status
 ```
 
 The login flow is async because the provider login step may require browser or human interaction.

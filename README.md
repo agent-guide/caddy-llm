@@ -217,8 +217,8 @@ The admin surface is mounted through `handle_llm_admin` and currently includes:
   - `GET /admin/credentials/{id}`
   - `DELETE /admin/credentials/{id}`
 - CLI login:
-  - `POST /admin/clilogin/{cliname}`
-  - `GET /admin/clilogin/{cliname}/status`
+  - `POST /admin/cliauth/{cliname}`
+  - `GET /admin/cliauth/{cliname}/status`
 
 The route table also includes MCP, memory, agent, and metrics endpoints, but those handlers currently return `501 not implemented`.
 

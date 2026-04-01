@@ -9,8 +9,8 @@ import (
 	"go.uber.org/zap"
 )
 
-// loginStatus tracks the state of an async CLI login flow.
-type loginStatus struct {
+// cliAuthStatus tracks the state of an async CLI auth flow.
+type cliAuthStatus struct {
 	Status       string     `json:"status"` // "running", "succeeded", "failed"
 	StartedAt    time.Time  `json:"started_at"`
 	FinishedAt   *time.Time `json:"finished_at,omitempty"`
@@ -18,13 +18,13 @@ type loginStatus struct {
 	CredentialID string     `json:"credential_id,omitempty"`
 }
 
-// handleCLILogin triggers a provider-specific CLI login flow asynchronously.
-// POST /admin/clilogin/{cliname}
+// handleCLIAuth triggers a provider-specific CLI auth flow asynchronously.
+// POST /admin/cliauth/{cliname}
 //
 // The handler returns 202 Accepted immediately. In the background it invokes
 // the registered Authenticator's Login method. On success the returned
 // credential is registered with the auth manager.
-func (h *Handler) handleCLILogin(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) handleCLIAuth(w http.ResponseWriter, r *http.Request) {
 	if h.authManager == nil {
 		writeError(w, http.StatusServiceUnavailable, "auth manager not configured")
 		return
@@ -42,37 +42,37 @@ func (h *Handler) handleCLILogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	status := &loginStatus{
+	status := &cliAuthStatus{
 		Status:    "running",
 		StartedAt: time.Now().UTC(),
 	}
-	h.storeLoginStatus(requestedName, status)
+	h.storeCLIAuthStatus(requestedName, status)
 
 	// Run the login flow in the background so the HTTP call returns immediately.
 	go func() {
 		ctx := context.Background()
 		cred, err := auth.Login(ctx)
-		finished := statusSnapshot(status)
+		finished := cliAuthStatusSnapshot(status)
 		now := time.Now().UTC()
 		finished.FinishedAt = &now
 		if err != nil {
 			finished.Status = "failed"
 			finished.Error = err.Error()
-			h.storeLoginStatus(requestedName, &finished)
+			h.storeCLIAuthStatus(requestedName, &finished)
 			h.logger.Error("cli login failed", zap.String("cliname", requestedName), zap.Error(err))
 			return
 		}
 		if regErr := h.authManager.Register(ctx, cred); regErr != nil {
 			finished.Status = "failed"
 			finished.Error = regErr.Error()
-			h.storeLoginStatus(requestedName, &finished)
+			h.storeCLIAuthStatus(requestedName, &finished)
 			h.logger.Error("cli login: register credential failed",
 				zap.String("cliname", requestedName), zap.Error(regErr))
 			return
 		}
 		finished.Status = "succeeded"
 		finished.CredentialID = cred.ID
-		h.storeLoginStatus(requestedName, &finished)
+		h.storeCLIAuthStatus(requestedName, &finished)
 		h.logger.Info("cli login succeeded",
 			zap.String("cliname", requestedName),
 			zap.String("credential_id", cred.ID))
@@ -85,21 +85,21 @@ func (h *Handler) handleCLILogin(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// handleCLILoginStatus returns the current status of an async CLI login flow.
-// GET /admin/clilogin/{cliname}/status
-func (h *Handler) handleCLILoginStatus(w http.ResponseWriter, r *http.Request) {
+// handleCLIAuthStatus returns the current status of an async CLI auth flow.
+// GET /admin/cliauth/{cliname}/status
+func (h *Handler) handleCLIAuthStatus(w http.ResponseWriter, r *http.Request) {
 	cliname := strings.ToLower(strings.TrimSpace(r.PathValue("cliname")))
 	if cliname == "" {
 		writeError(w, http.StatusBadRequest, "cliname is required")
 		return
 	}
 
-	val, ok := h.loginSessions.Load(cliname)
+	val, ok := h.cliAuthSessions.Load(cliname)
 	if !ok {
 		writeError(w, http.StatusNotFound, "no login session found for "+cliname)
 		return
 	}
-	status, ok := val.(loginStatus)
+	status, ok := val.(cliAuthStatus)
 	if !ok {
 		writeError(w, http.StatusInternalServerError, "invalid login session state")
 		return
@@ -107,16 +107,16 @@ func (h *Handler) handleCLILoginStatus(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, status)
 }
 
-func (h *Handler) storeLoginStatus(cliname string, status *loginStatus) {
+func (h *Handler) storeCLIAuthStatus(cliname string, status *cliAuthStatus) {
 	if h == nil || status == nil {
 		return
 	}
-	h.loginSessions.Store(cliname, statusSnapshot(status))
+	h.cliAuthSessions.Store(cliname, cliAuthStatusSnapshot(status))
 }
 
-func statusSnapshot(status *loginStatus) loginStatus {
+func cliAuthStatusSnapshot(status *cliAuthStatus) cliAuthStatus {
 	if status == nil {
-		return loginStatus{}
+		return cliAuthStatus{}
 	}
 	snapshot := *status
 	if status.FinishedAt != nil {
