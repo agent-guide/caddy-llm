@@ -48,7 +48,7 @@ func (s *sqliteJSONStore) ListByTagPrefix(ctx context.Context, tagPrefix string)
 	var rows []sqliteJSONRecord
 	query := s.baseQuery(ctx)
 	if tagPrefix != "" {
-		query = query.Where(s.columnName(s.tagField)+" LIKE ?", tagPrefix+"%")
+		query = query.Where(s.quotedColumnName(s.tagField)+" LIKE ?", tagPrefix+"%")
 	}
 	if err := query.Find(&rows).Error; err != nil {
 		return nil, err
@@ -69,7 +69,7 @@ func (s *sqliteJSONStore) ListByTag(ctx context.Context, tag string) ([]any, err
 	var rows []sqliteJSONRecord
 	query := s.baseQuery(ctx)
 	if tag != "" {
-		query = query.Where(s.columnName(s.tagField)+" = ?", tag)
+		query = query.Where(s.quotedColumnName(s.tagField)+" = ?", tag)
 	}
 	if err := query.Find(&rows).Error; err != nil {
 		return nil, err
@@ -106,13 +106,13 @@ func (s *sqliteJSONStore) Save(ctx context.Context, id string, tag string, obj a
 func (s *sqliteJSONStore) Delete(ctx context.Context, id string) error {
 	return s.db.WithContext(ctx).
 		Table(s.table).
-		Where(s.columnName(s.idField)+" = ?", id).
+		Where(s.quotedColumnName(s.idField)+" = ?", id).
 		Delete(&sqliteJSONRecord{}).Error
 }
 
 func (s *sqliteJSONStore) Get(ctx context.Context, id string) (string, any, error) {
 	var row sqliteJSONRecord
-	if err := s.baseQuery(ctx).Where(s.columnName(s.idField)+" = ?", id).First(&row).Error; err != nil {
+	if err := s.baseQuery(ctx).Where(s.quotedColumnName(s.idField)+" = ?", id).First(&row).Error; err != nil {
 		return "", nil, err
 	}
 
@@ -150,11 +150,11 @@ func (s *sqliteJSONStore) baseQuery(ctx context.Context) *gorm.DB {
 	return s.db.WithContext(ctx).
 		Table(s.table).
 		Select(strings.Join([]string{
-			fmt.Sprintf("%s AS id", s.columnName(s.idField)),
-			fmt.Sprintf("%s AS tag", s.columnName(s.tagField)),
-			fmt.Sprintf("%s AS data", s.columnName(s.dataField)),
+			fmt.Sprintf("%s AS id", s.quotedColumnName(s.idField)),
+			fmt.Sprintf("%s AS tag", s.quotedColumnName(s.tagField)),
+			fmt.Sprintf("%s AS data", s.quotedColumnName(s.dataField)),
 		}, ", ")).
-		Order(s.columnName(s.idField) + " asc")
+		Order(s.quotedColumnName(s.idField) + " asc")
 }
 
 func (s *sqliteJSONStore) dbRecord(row sqliteJSONRecord) map[string]any {
@@ -167,4 +167,8 @@ func (s *sqliteJSONStore) dbRecord(row sqliteJSONRecord) map[string]any {
 
 func (s *sqliteJSONStore) columnName(name string) string {
 	return s.db.NamingStrategy.ColumnName(s.table, name)
+}
+
+func (s *sqliteJSONStore) quotedColumnName(name string) string {
+	return s.db.Statement.Quote(clause.Column{Name: s.columnName(name)})
 }
