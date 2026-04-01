@@ -75,7 +75,7 @@ func (a *authenticatorRefresher) Refresh(ctx context.Context, cred *credential.C
 // feedback, quota tracking, and optional persistence.
 type Manager struct {
 	store    intf.CredentialStorer
-	selector Selector
+	strategy Strategy
 	hook     Hook
 
 	mu              sync.RWMutex
@@ -96,25 +96,25 @@ type Manager struct {
 	refreshSemaphore chan struct{}
 }
 
-// NewManager constructs a Manager with optional custom selector and hook.
-// If selector is nil, RoundRobinSelector is used. If hook is nil, NoopHook is used.
-func NewManager(store intf.CredentialStorer, selector Selector, hook Hook) *Manager {
-	if selector == nil {
-		selector = &RoundRobinSelector{}
+// NewManager constructs a Manager with optional strategy and hook.
+// If strategy is nil, RoundRobinSelector is used. If hook is nil, NoopHook is used.
+func NewManager(store intf.CredentialStorer, strategy Strategy, hook Hook) *Manager {
+	if strategy == nil {
+		strategy = &RoundRobinSelector{}
 	}
 	if hook == nil {
 		hook = NoopHook{}
 	}
 	m := &Manager{
 		store:            store,
-		selector:         selector,
+		strategy:         strategy,
 		hook:             hook,
 		creds:            make(map[string]*credential.Credential),
 		authenticators:   make(map[string]Authenticator),
 		providerOffsets:  make(map[string]int),
 		refreshSemaphore: make(chan struct{}, defaultRefreshMaxConcurrent),
 	}
-	m.scheduler = newAuthScheduler(selector)
+	m.scheduler = newAuthScheduler(strategy)
 	return m
 }
 
@@ -147,19 +147,19 @@ func (m *Manager) GetAuthenticator(cliname string) (Authenticator, bool) {
 	return auth, ok
 }
 
-// SetSelector replaces the credential selection strategy.
-func (m *Manager) SetSelector(selector Selector) {
+// SetStrategy replaces the credential selection strategy.
+func (m *Manager) SetStrategy(strategy Strategy) {
 	if m == nil {
 		return
 	}
-	if selector == nil {
-		selector = &RoundRobinSelector{}
+	if strategy == nil {
+		strategy = &RoundRobinSelector{}
 	}
 	m.mu.Lock()
-	m.selector = selector
+	m.strategy = strategy
 	m.mu.Unlock()
 	if m.scheduler != nil {
-		m.scheduler.setSelector(selector)
+		m.scheduler.setStrategy(strategy)
 		m.syncScheduler()
 	}
 }
@@ -197,6 +197,12 @@ func (m *Manager) Load(ctx context.Context) error {
 		if !ok || cred == nil {
 			return fmt.Errorf("manager: load from store: unexpected credential type %T", item)
 		}
+		// StatusRefreshing is a transient in-process state. If it survived a
+		// restart the refresh never completed; reset to Active so the refresh
+		// loop re-evaluates it on the next cycle.
+		if cred.Status == credential.StatusRefreshing {
+			cred.Status = credential.StatusActive
+		}
 		if err := m.Register(WithSkipPersist(ctx), cred); err != nil {
 			return fmt.Errorf("manager: register credential %s: %w", cred.ID, err)
 		}
@@ -227,8 +233,6 @@ func (m *Manager) Register(ctx context.Context, cred *credential.Credential) err
 	if cred.Status == "" {
 		cred.Status = credential.StatusActive
 	}
-	cred.EnsureIndex()
-
 	if !shouldSkipPersist(ctx) {
 		if err := m.persist(ctx, cred); err != nil {
 			return err
@@ -327,43 +331,7 @@ func (m *Manager) Pick(ctx context.Context, provider, model string, tried map[st
 	if m == nil {
 		return nil, &credential.Error{Code: "manager_nil", Message: "manager not initialized"}
 	}
-
-	// Try scheduler first (O(1) incremental state).
-	cred, err := m.scheduler.pick(ctx, provider, model, tried)
-	if err == nil {
-		return cred, nil
-	}
-
-	// Fall back to selector if scheduler has no state (e.g. custom selector).
-	if isBuiltinSelector(m.selector) {
-		return nil, err
-	}
-
-	m.mu.RLock()
-	providerKey := strings.ToLower(strings.TrimSpace(provider))
-	var candidates []*credential.Credential
-	for _, c := range m.creds {
-		if strings.ToLower(c.Provider) == providerKey {
-			if len(tried) > 0 {
-				if _, already := tried[c.ID]; already {
-					continue
-				}
-			}
-			candidates = append(candidates, c)
-		}
-	}
-	m.mu.RUnlock()
-
-	return m.selector.Pick(ctx, provider, model, candidates)
-}
-
-func isBuiltinSelector(s Selector) bool {
-	switch s.(type) {
-	case *RoundRobinSelector, *FillFirstSelector:
-		return true
-	default:
-		return false
-	}
+	return m.scheduler.pick(ctx, provider, model, tried)
 }
 
 // MarkResult records the outcome of a provider request and adjusts credential state
@@ -442,7 +410,6 @@ func (m *Manager) MarkResult(ctx context.Context, result Result) {
 			// Auth errors disable the credential.
 			cred.Status = credential.StatusDisabled
 			cred.StatusMessage = rerr.Message
-			cred.Disabled = true
 		} else {
 			cred.LastError = rerr
 			if result.RetryAfter != nil {
@@ -581,7 +548,7 @@ func (m *Manager) snapshotForRefresh(now time.Time) []*credential.Credential {
 	defer m.mu.RUnlock()
 	var candidates []*credential.Credential
 	for _, cred := range m.creds {
-		if cred.Disabled || cred.Status == credential.StatusDisabled {
+		if cred.IsDisabled() {
 			continue
 		}
 		if !needsRefresh(cred, now) {

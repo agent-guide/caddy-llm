@@ -25,7 +25,7 @@ type cliAuthStatus struct {
 // the registered Authenticator's Login method. On success the returned
 // credential is registered with the auth manager.
 func (h *Handler) handleCLIAuth(w http.ResponseWriter, r *http.Request) {
-	if h.authManager == nil {
+	if h.cliauthManager == nil {
 		writeError(w, http.StatusServiceUnavailable, "auth manager not configured")
 		return
 	}
@@ -36,7 +36,7 @@ func (h *Handler) handleCLIAuth(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	auth, ok := h.authManager.GetAuthenticator(requestedName)
+	auth, ok := h.cliauthManager.GetAuthenticator(requestedName)
 	if !ok {
 		writeError(w, http.StatusNotFound, requestedName+" authenticator not registered")
 		return
@@ -62,7 +62,7 @@ func (h *Handler) handleCLIAuth(w http.ResponseWriter, r *http.Request) {
 			h.logger.Error("cli login failed", zap.String("cliname", requestedName), zap.Error(err))
 			return
 		}
-		if regErr := h.authManager.Register(ctx, cred); regErr != nil {
+		if regErr := h.cliauthManager.Register(ctx, cred); regErr != nil {
 			finished.Status = "failed"
 			finished.Error = regErr.Error()
 			h.storeCLIAuthStatus(requestedName, &finished)

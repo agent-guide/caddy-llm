@@ -49,7 +49,7 @@ type testStatusError struct {
 func (e testStatusError) Error() string   { return e.msg }
 func (e testStatusError) StatusCode() int { return e.status }
 
-func newSeededHandler(authMgr *manager.Manager, prov provider.Provider) *Handler {
+func newSeededHandler(cliauthMgr *manager.Manager, prov provider.Provider) *Handler {
 	handler := NewHandler(prov)
 	gw := gateway.NewAgentGateway()
 	gw.Configure(nil, gateway.NewStaticProviderResolver(func(name string) (provider.Provider, bool) {
@@ -57,7 +57,7 @@ func newSeededHandler(authMgr *manager.Manager, prov provider.Provider) *Handler
 			return nil, false
 		}
 		return prov, true
-	}), nil, authMgr, nil)
+	}), nil, cliauthMgr, nil)
 	handler.SetAgentGateway(gw)
 	handler.RouteID = "anthropic-test-route"
 	gw.EnsureRoute(routepkg.Route{
@@ -73,15 +73,15 @@ func newSeededHandler(authMgr *manager.Manager, prov provider.Provider) *Handler
 }
 
 func TestServeLLMApiMarksAnthropicStreamFailures(t *testing.T) {
-	authMgr := manager.NewManager(nil, nil, nil)
-	if err := authMgr.Register(context.Background(), &credential.Credential{
+	cliauthMgr := manager.NewManager(nil, nil, nil)
+	if err := cliauthMgr.Register(context.Background(), &credential.Credential{
 		ID:       "cred-anthropic-1",
 		Provider: "anthropic",
 	}); err != nil {
 		t.Fatalf("register credential: %v", err)
 	}
 
-	handler := newSeededHandler(authMgr, &testProvider{
+	handler := newSeededHandler(cliauthMgr, &testProvider{
 		streamErr: testStatusError{msg: "rate limit", status: http.StatusTooManyRequests},
 	})
 
@@ -111,7 +111,7 @@ func TestServeLLMApiMarksAnthropicStreamFailures(t *testing.T) {
 		t.Fatalf("unexpected status code: got %d want %d", rec.Code, http.StatusBadGateway)
 	}
 
-	cred := authMgr.Get("cred-anthropic-1")
+	cred := cliauthMgr.Get("cred-anthropic-1")
 	if cred == nil {
 		t.Fatal("credential not found after request")
 	}

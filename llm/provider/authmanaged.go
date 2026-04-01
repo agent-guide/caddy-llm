@@ -12,17 +12,17 @@ import (
 )
 
 type authManagedProvider struct {
-	base         Provider
-	providerName string
-	authManager  *manager.Manager
-	config       ProviderConfig
+	base           Provider
+	providerName   string
+	cliauthManager *manager.Manager
+	config         ProviderConfig
 }
 
 // WrapWithAuthManager decorates a provider with auth-manager driven credential
 // selection and execution result feedback. The handler layer then only needs to call the
 // returned provider instance.
-func WrapWithAuthManager(base Provider, providerName string, authMgr *manager.Manager) Provider {
-	if base == nil || authMgr == nil {
+func WrapWithAuthManager(base Provider, providerName string, cliauthMgr *manager.Manager) Provider {
+	if base == nil || cliauthMgr == nil {
 		return base
 	}
 	cfg := base.Config()
@@ -31,10 +31,10 @@ func WrapWithAuthManager(base Provider, providerName string, authMgr *manager.Ma
 	}
 	cfg.Defaults()
 	return &authManagedProvider{
-		base:         base,
-		providerName: providerName,
-		authManager:  authMgr,
-		config:       cfg,
+		base:           base,
+		providerName:   providerName,
+		cliauthManager: cliauthMgr,
+		config:         cfg,
 	}
 }
 
@@ -65,10 +65,10 @@ func (p *authManagedProvider) Config() ProviderConfig {
 }
 
 func (p *authManagedProvider) pickCredential(ctx context.Context, model string) (context.Context, *credential.Credential) {
-	if p.authManager == nil || !p.shouldUseCredential() {
+	if p.cliauthManager == nil || !p.shouldUseCredential() {
 		return ctx, nil
 	}
-	cred, err := p.authManager.Pick(ctx, p.providerName, model, nil)
+	cred, err := p.cliauthManager.Pick(ctx, p.providerName, model, nil)
 	if err != nil || cred == nil {
 		return ctx, nil
 	}
@@ -76,7 +76,7 @@ func (p *authManagedProvider) pickCredential(ctx context.Context, model string) 
 }
 
 func (p *authManagedProvider) markResult(ctx context.Context, cred *credential.Credential, model string, err error) {
-	if p.authManager == nil || cred == nil {
+	if p.cliauthManager == nil || cred == nil {
 		return
 	}
 
@@ -99,7 +99,7 @@ func (p *authManagedProvider) markResult(ctx context.Context, cred *credential.C
 			Retryable:  httpStatus == http.StatusTooManyRequests || httpStatus >= 500,
 		}
 	}
-	p.authManager.MarkResult(ctx, result)
+	p.cliauthManager.MarkResult(ctx, result)
 }
 
 func (p *authManagedProvider) shouldUseCredential() bool {

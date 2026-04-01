@@ -1,21 +1,19 @@
 package credential
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/agent-guide/caddy-agent-gateway/internal/utils"
 )
 
 // Credential encapsulates the runtime state and metadata for a single upstream credential.
 type Credential struct {
 	// ID uniquely identifies the credential across restarts.
 	ID string `json:"id"`
-	// Index is a stable runtime identifier derived from credential metadata (not persisted).
-	Index string `json:"-"`
 	// Provider is the upstream provider key (e.g. "openai", "anthropic").
 	Provider string `json:"provider"`
 	// Prefix optionally namespaces models for routing (e.g., "teamA/gpt-4o").
@@ -23,11 +21,10 @@ type Credential struct {
 	// Label is an optional human-readable label for logging and display.
 	Label string `json:"label,omitempty"`
 	// Status is the lifecycle status managed by the Manager.
+	// Use StatusDisabled to mark a credential as intentionally disabled.
 	Status Status `json:"status"`
 	// StatusMessage holds a short description for the current status.
 	StatusMessage string `json:"status_message,omitempty"`
-	// Disabled indicates the credential is intentionally disabled by the operator.
-	Disabled bool `json:"disabled"`
 	// Unavailable flags transient provider unavailability (e.g. quota exceeded).
 	Unavailable bool `json:"unavailable"`
 	// ProxyURL overrides the global proxy setting for this credential if provided.
@@ -52,8 +49,6 @@ type Credential struct {
 	NextRetryAfter time.Time `json:"next_retry_after"`
 	// ModelStates tracks per-model runtime availability data.
 	ModelStates map[string]*ModelState `json:"model_states,omitempty"`
-
-	indexAssigned bool
 }
 
 // QuotaState contains quota limiter tracking data for a credential.
@@ -138,34 +133,9 @@ func (m *ModelState) Clone() *ModelState {
 	return &copy
 }
 
-// EnsureIndex returns a stable index derived from api_key attribute or ID.
-func (c *Credential) EnsureIndex() string {
-	if c == nil {
-		return ""
-	}
-	if c.indexAssigned && c.Index != "" {
-		return c.Index
-	}
-
-	seed := ""
-	if c.Attributes != nil {
-		if apiKey := strings.TrimSpace(c.Attributes["api_key"]); apiKey != "" {
-			seed = "api_key:" + apiKey
-		}
-	}
-	if seed == "" {
-		if id := strings.TrimSpace(c.ID); id != "" {
-			seed = "id:" + id
-		} else {
-			return ""
-		}
-	}
-
-	sum := sha256.Sum256([]byte(seed))
-	idx := hex.EncodeToString(sum[:8])
-	c.Index = idx
-	c.indexAssigned = true
-	return idx
+// IsDisabled reports whether the credential has been intentionally disabled.
+func (c *Credential) IsDisabled() bool {
+	return c != nil && c.Status == StatusDisabled
 }
 
 // APIKey returns the api_key attribute value, or empty string if not set.
@@ -205,143 +175,9 @@ func (c *Credential) ExpirationTime() (time.Time, bool) {
 	if c == nil {
 		return time.Time{}, false
 	}
-	return expirationFromMap(c.Metadata)
+	return utils.ExpirationFromMap(c.Metadata)
 }
 
-var expireKeys = [...]string{"expired", "expire", "expires_at", "expiresAt", "expiry", "expires"}
-
-func expirationFromMap(meta map[string]any) (time.Time, bool) {
-	if meta == nil {
-		return time.Time{}, false
-	}
-	for _, key := range expireKeys {
-		if v, ok := meta[key]; ok {
-			if ts, ok1 := parseTimeValue(v); ok1 {
-				return ts, true
-			}
-		}
-	}
-	// Check nested "token" object for OAuth-style tokens.
-	for _, nestedKey := range []string{"token", "Token"} {
-		if nested, ok := meta[nestedKey]; ok {
-			switch val := nested.(type) {
-			case map[string]any:
-				if ts, ok1 := expirationFromMap(val); ok1 {
-					return ts, true
-				}
-			case map[string]string:
-				temp := make(map[string]any, len(val))
-				for k, v := range val {
-					temp[k] = v
-				}
-				if ts, ok1 := expirationFromMap(temp); ok1 {
-					return ts, true
-				}
-			}
-		}
-	}
-	return time.Time{}, false
-}
-
-func parseTimeValue(v any) (time.Time, bool) {
-	switch value := v.(type) {
-	case string:
-		s := strings.TrimSpace(value)
-		if s == "" {
-			return time.Time{}, false
-		}
-		for _, layout := range []string{
-			time.RFC3339,
-			time.RFC3339Nano,
-			"2006-01-02 15:04:05",
-			"2006-01-02 15:04",
-		} {
-			if ts, err := time.Parse(layout, s); err == nil {
-				return ts, true
-			}
-		}
-		if unix, err := strconv.ParseInt(s, 10, 64); err == nil {
-			return normaliseUnix(unix), true
-		}
-	case float64:
-		return normaliseUnix(int64(value)), true
-	case int64:
-		return normaliseUnix(value), true
-	case json.Number:
-		if i, err := value.Int64(); err == nil {
-			return normaliseUnix(i), true
-		}
-	}
-	return time.Time{}, false
-}
-
-func normaliseUnix(raw int64) time.Time {
-	if raw <= 0 {
-		return time.Time{}
-	}
-	if raw > 1_000_000_000_000 {
-		return time.UnixMilli(raw)
-	}
-	return time.Unix(raw, 0)
-}
-
-func parseBoolAny(val any) (bool, bool) {
-	switch typed := val.(type) {
-	case bool:
-		return typed, true
-	case string:
-		trimmed := strings.TrimSpace(typed)
-		if trimmed == "" {
-			return false, false
-		}
-		parsed, err := strconv.ParseBool(trimmed)
-		if err != nil {
-			return false, false
-		}
-		return parsed, true
-	case float64:
-		return typed != 0, true
-	case json.Number:
-		parsed, err := typed.Int64()
-		if err != nil {
-			return false, false
-		}
-		return parsed != 0, true
-	default:
-		return false, false
-	}
-}
-
-func parseIntAny(val any) (int, bool) {
-	switch typed := val.(type) {
-	case int:
-		return typed, true
-	case int32:
-		return int(typed), true
-	case int64:
-		return int(typed), true
-	case float64:
-		return int(typed), true
-	case json.Number:
-		parsed, err := typed.Int64()
-		if err != nil {
-			return 0, false
-		}
-		return int(parsed), true
-	case string:
-		trimmed := strings.TrimSpace(typed)
-		if trimmed == "" {
-			return 0, false
-		}
-		parsed, err := strconv.Atoi(trimmed)
-		if err != nil {
-			return 0, false
-		}
-		return parsed, true
-	default:
-		return 0, false
-	}
-}
 
 // DisableCoolingOverride returns the per-credential disable_cooling override when present.
 func (c *Credential) DisableCoolingOverride() (bool, bool) {
@@ -350,7 +186,7 @@ func (c *Credential) DisableCoolingOverride() (bool, bool) {
 	}
 	for _, key := range []string{"disable_cooling", "disable-cooling"} {
 		if val, ok := c.Metadata[key]; ok {
-			if parsed, okParse := parseBoolAny(val); okParse {
+			if parsed, okParse := utils.ParseBoolAny(val); okParse {
 				return parsed, true
 			}
 		}
@@ -365,7 +201,7 @@ func (c *Credential) RequestRetryOverride() (int, bool) {
 	}
 	for _, key := range []string{"request_retry", "request-retry"} {
 		if val, ok := c.Metadata[key]; ok {
-			if parsed, okParse := parseIntAny(val); okParse {
+			if parsed, okParse := utils.ParseIntAny(val); okParse {
 				if parsed < 0 {
 					parsed = 0
 				}

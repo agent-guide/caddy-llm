@@ -13,7 +13,7 @@ import (
 
 // Handler handles Admin API requests under /admin/.
 type Handler struct {
-	authManager       *manager.Manager
+	cliauthManager    *manager.Manager
 	configStore       intf.ConfigStorer
 	mux               *http.ServeMux
 	logger            *zap.Logger
@@ -25,12 +25,12 @@ type Handler struct {
 
 // NewHandler constructs an admin Handler with the given auth manager.
 // logger may be nil (a no-op logger is used in that case).
-func NewHandler(authMgr *manager.Manager, configStore intf.ConfigStorer, logger *zap.Logger, adminUser, adminPasswordHash string) *Handler {
+func NewHandler(cliauthMgr *manager.Manager, configStore intf.ConfigStorer, logger *zap.Logger, adminUser, adminPasswordHash string) *Handler {
 	if logger == nil {
 		logger = zap.NewNop()
 	}
 	h := &Handler{
-		authManager:       authMgr,
+		cliauthManager:    cliauthMgr,
 		configStore:       configStore,
 		logger:            logger,
 		sessions:          newSessionStore(),

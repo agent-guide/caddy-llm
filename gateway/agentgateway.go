@@ -21,7 +21,7 @@ type AgentGateway struct {
 	RouteLoader      routepkg.RouteLoader
 	ProviderResolver ProviderResolver
 	LocalAPIKeyStore configstoreintf.LocalAPIKeyStorer
-	AuthManager      *manager.Manager
+	cliauthManager   *manager.Manager
 	Selector         routepkg.RouteSelector
 }
 
@@ -41,17 +41,17 @@ func (g *AgentGateway) Reset() {
 	g.RouteLoader = nil
 	g.ProviderResolver = nil
 	g.LocalAPIKeyStore = nil
-	g.AuthManager = nil
+	g.cliauthManager = nil
 	g.Selector = nil
 }
 
-func (g *AgentGateway) Configure(routeLoader routepkg.RouteLoader, providerResolver ProviderResolver, localAPIKeyStore configstoreintf.LocalAPIKeyStorer, authMgr *manager.Manager, selector routepkg.RouteSelector) {
+func (g *AgentGateway) Configure(routeLoader routepkg.RouteLoader, providerResolver ProviderResolver, localAPIKeyStore configstoreintf.LocalAPIKeyStorer, cliauthMgr *manager.Manager, selector routepkg.RouteSelector) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	g.RouteLoader = routeLoader
 	g.ProviderResolver = providerResolver
 	g.LocalAPIKeyStore = localAPIKeyStore
-	g.AuthManager = authMgr
+	g.cliauthManager = cliauthMgr
 	g.Selector = selector
 	g.configured = true
 }
@@ -252,7 +252,7 @@ func (g *AgentGateway) selector() routepkg.RouteSelector {
 
 func (g *AgentGateway) wrapProvider(prov provider.Provider, providerName string) provider.Provider {
 	g.mu.RLock()
-	authMgr := g.AuthManager
+	cliauthMgr := g.cliauthManager
 	g.mu.RUnlock()
-	return provider.WrapWithAuthManager(prov, providerName, authMgr)
+	return provider.WrapWithAuthManager(prov, providerName, cliauthMgr)
 }

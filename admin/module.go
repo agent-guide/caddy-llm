@@ -38,7 +38,7 @@ func (h *AgentGatewayAdminHandler) Provision(ctx caddy.Context) error {
 	if err != nil {
 		return fmt.Errorf("agent_gateway_admin: get agent_gateway app: %w", err)
 	}
-	h.handler = NewHandler(app.AuthManager(), app.ConfigStore(), ctx.Logger(h), h.AdminUsername, h.AdminPasswordHash)
+	h.handler = NewHandler(app.CLIAuthManager(), app.ConfigStore(), ctx.Logger(h), h.AdminUsername, h.AdminPasswordHash)
 	return nil
 }
 

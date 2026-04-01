@@ -9,22 +9,22 @@ import (
 )
 
 func TestProvisionAuthenticatorsWithEmptyConfig(t *testing.T) {
-	app := &App{authManager: manager.NewManager(nil, nil, nil)}
+	app := &App{cliauthManager: manager.NewManager(nil, nil, nil)}
 
 	if err := app.provisionAuthenticators(caddy.Context{}); err != nil {
 		t.Fatalf("provisionAuthenticators() error = %v", err)
 	}
 
-	if _, ok := app.authManager.GetAuthenticator("codex"); ok {
+	if _, ok := app.cliauthManager.GetAuthenticator("codex"); ok {
 		t.Fatal("expected codex authenticator to remain disabled without configuration")
 	}
-	if _, ok := app.authManager.GetAuthenticator("claude"); ok {
+	if _, ok := app.cliauthManager.GetAuthenticator("claude"); ok {
 		t.Fatal("expected claude authenticator to remain disabled without configuration")
 	}
 }
 
 func TestRegisterLoadedAuthenticators(t *testing.T) {
-	app := &App{authManager: manager.NewManager(nil, nil, nil)}
+	app := &App{cliauthManager: manager.NewManager(nil, nil, nil)}
 
 	err := app.registerLoadedAuthenticators(map[string]any{
 		"gemini": authenticator.NewGeminiAuthenticator(),
@@ -33,13 +33,13 @@ func TestRegisterLoadedAuthenticators(t *testing.T) {
 		t.Fatalf("registerLoadedAuthenticators() error = %v", err)
 	}
 
-	if _, ok := app.authManager.GetAuthenticator("gemini"); !ok {
+	if _, ok := app.cliauthManager.GetAuthenticator("gemini"); !ok {
 		t.Fatal("expected configured gemini authenticator to be registered")
 	}
 }
 
 func TestRegisterLoadedAuthenticatorsRejectsInvalidModule(t *testing.T) {
-	app := &App{authManager: manager.NewManager(nil, nil, nil)}
+	app := &App{cliauthManager: manager.NewManager(nil, nil, nil)}
 
 	err := app.registerLoadedAuthenticators(map[string]any{
 		"invalid": struct{}{},

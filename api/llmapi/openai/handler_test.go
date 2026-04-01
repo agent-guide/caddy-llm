@@ -73,14 +73,14 @@ type testStatusError struct {
 func (e testStatusError) Error() string   { return e.msg }
 func (e testStatusError) StatusCode() int { return e.status }
 
-func newSeededHandler(authMgr *manager.Manager, prov provider.Provider) *Handler {
+func newSeededHandler(cliauthMgr *manager.Manager, prov provider.Provider) *Handler {
 	handler := NewHandler()
 	gw := initGatewayForTests(nil, gateway.NewStaticProviderResolver(func(name string) (provider.Provider, bool) {
 		if name != "openai" || prov == nil {
 			return nil, false
 		}
 		return prov, true
-	}), nil, authMgr, nil)
+	}), nil, cliauthMgr, nil)
 	handler.SetAgentGateway(gw)
 	handler.RouteID = "openai-test-route"
 	gw.EnsureRoute(routepkg.Route{
@@ -95,9 +95,9 @@ func newSeededHandler(authMgr *manager.Manager, prov provider.Provider) *Handler
 	return handler
 }
 
-func initGatewayForTests(routeLoader routepkg.RouteLoader, providerResolver gateway.ProviderResolver, localAPIKeyStore configstoreintf.LocalAPIKeyStorer, authMgr *manager.Manager, selector routepkg.RouteSelector) *gateway.AgentGateway {
+func initGatewayForTests(routeLoader routepkg.RouteLoader, providerResolver gateway.ProviderResolver, localAPIKeyStore configstoreintf.LocalAPIKeyStorer, cliauthMgr *manager.Manager, selector routepkg.RouteSelector) *gateway.AgentGateway {
 	gw := gateway.NewAgentGateway()
-	gw.Configure(routeLoader, providerResolver, localAPIKeyStore, authMgr, selector)
+	gw.Configure(routeLoader, providerResolver, localAPIKeyStore, cliauthMgr, selector)
 	return gw
 }
 
@@ -247,15 +247,15 @@ func (s *integrationConfigStore) GetRouteStore(context.Context, configstoreintf.
 }
 
 func TestServeLLMApiMarksOpenAIStreamFailures(t *testing.T) {
-	authMgr := manager.NewManager(nil, nil, nil)
-	if err := authMgr.Register(context.Background(), &credential.Credential{
+	cliauthMgr := manager.NewManager(nil, nil, nil)
+	if err := cliauthMgr.Register(context.Background(), &credential.Credential{
 		ID:       "cred-openai-1",
 		Provider: "openai",
 	}); err != nil {
 		t.Fatalf("register credential: %v", err)
 	}
 
-	handler := newSeededHandler(authMgr, &testProvider{
+	handler := newSeededHandler(cliauthMgr, &testProvider{
 		streamErr: testStatusError{msg: "rate limit", status: http.StatusTooManyRequests},
 	})
 
@@ -281,7 +281,7 @@ func TestServeLLMApiMarksOpenAIStreamFailures(t *testing.T) {
 		t.Fatalf("unexpected status code: got %d want %d", rec.Code, http.StatusBadGateway)
 	}
 
-	cred := authMgr.Get("cred-openai-1")
+	cred := cliauthMgr.Get("cred-openai-1")
 	if cred == nil {
 		t.Fatal("credential not found after request")
 	}
@@ -334,15 +334,15 @@ func TestServeLLMApiReturnsChatCompletionResponse(t *testing.T) {
 		},
 	}
 
-	authMgr := manager.NewManager(nil, nil, nil)
-	if err := authMgr.Register(context.Background(), &credential.Credential{
+	cliauthMgr := manager.NewManager(nil, nil, nil)
+	if err := cliauthMgr.Register(context.Background(), &credential.Credential{
 		ID:       "cred-openai-2",
 		Provider: "openai",
 	}); err != nil {
 		t.Fatalf("register credential: %v", err)
 	}
 
-	handler := newSeededHandler(authMgr, prov)
+	handler := newSeededHandler(cliauthMgr, prov)
 
 	body, err := json.Marshal(ChatCompletionRequest{
 		Model: "gpt-4o-mini",
@@ -413,15 +413,15 @@ func TestServeLLMApiStreamsOpenAIChunks(t *testing.T) {
 		}}),
 	}
 
-	authMgr := manager.NewManager(nil, nil, nil)
-	if err := authMgr.Register(context.Background(), &credential.Credential{
+	cliauthMgr := manager.NewManager(nil, nil, nil)
+	if err := cliauthMgr.Register(context.Background(), &credential.Credential{
 		ID:       "cred-openai-3",
 		Provider: "openai",
 	}); err != nil {
 		t.Fatalf("register credential: %v", err)
 	}
 
-	handler := newSeededHandler(authMgr, prov)
+	handler := newSeededHandler(cliauthMgr, prov)
 
 	body, err := json.Marshal(ChatCompletionRequest{
 		Model:  "gpt-4o-mini",

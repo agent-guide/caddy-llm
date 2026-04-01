@@ -441,24 +441,24 @@ func (h *Handler) handleDeleteLocalAPIKey(w http.ResponseWriter, r *http.Request
 }
 
 func (h *Handler) handleListCredentials(w http.ResponseWriter, r *http.Request) {
-	if h.authManager == nil {
+	if h.cliauthManager == nil {
 		writeError(w, http.StatusServiceUnavailable, "auth manager not configured")
 		return
 	}
 
 	provider := r.URL.Query().Get("provider")
-	items := h.authManager.List(provider)
+	items := h.cliauthManager.List(provider)
 	writeJSON(w, http.StatusOK, map[string]any{"items": items})
 }
 
 func (h *Handler) handleGetCredential(w http.ResponseWriter, r *http.Request) {
-	if h.authManager == nil {
+	if h.cliauthManager == nil {
 		writeError(w, http.StatusServiceUnavailable, "auth manager not configured")
 		return
 	}
 
 	id := r.PathValue("id")
-	item := h.authManager.Get(id)
+	item := h.cliauthManager.Get(id)
 	if item == nil {
 		writeError(w, http.StatusNotFound, "credential not found")
 		return
@@ -516,13 +516,13 @@ func (h *Handler) handleMetrics(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) handleDeleteCredential(w http.ResponseWriter, r *http.Request) {
-	if h.authManager == nil {
+	if h.cliauthManager == nil {
 		writeError(w, http.StatusServiceUnavailable, "auth manager not configured")
 		return
 	}
 
 	id := r.PathValue("id")
-	if err := h.authManager.Deregister(r.Context(), id); err != nil {
+	if err := h.cliauthManager.Deregister(r.Context(), id); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}

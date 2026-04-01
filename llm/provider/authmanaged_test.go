@@ -45,8 +45,8 @@ func TestProviderConfigDefaults(t *testing.T) {
 }
 
 func TestWrapWithAuthManagerHonorsAPIKeyFirst(t *testing.T) {
-	authMgr := manager.NewManager(nil, nil, nil)
-	if err := authMgr.Register(context.Background(), &credential.Credential{
+	cliauthMgr := manager.NewManager(nil, nil, nil)
+	if err := cliauthMgr.Register(context.Background(), &credential.Credential{
 		ID:       "cred-1",
 		Provider: "openai",
 		Attributes: map[string]string{
@@ -63,7 +63,7 @@ func TestWrapWithAuthManagerHonorsAPIKeyFirst(t *testing.T) {
 			AuthStrategy: AuthStrategyAPIKeyFirst,
 		},
 	}
-	wrapped := WrapWithAuthManager(base, "openai", authMgr)
+	wrapped := WrapWithAuthManager(base, "openai", cliauthMgr)
 	if _, err := wrapped.Generate(context.Background(), &GenerateRequest{}); err != nil {
 		t.Fatalf("generate: %v", err)
 	}
@@ -73,9 +73,9 @@ func TestWrapWithAuthManagerHonorsAPIKeyFirst(t *testing.T) {
 }
 
 func TestWrapWithAuthManagerUsesProviderCredentials(t *testing.T) {
-	authMgr := manager.NewManager(nil, nil, nil)
+	cliauthMgr := manager.NewManager(nil, nil, nil)
 	for _, id := range []string{"cred-a", "cred-b"} {
-		if err := authMgr.Register(context.Background(), &credential.Credential{
+		if err := cliauthMgr.Register(context.Background(), &credential.Credential{
 			ID:       id,
 			Provider: "openai",
 			Attributes: map[string]string{
@@ -92,7 +92,7 @@ func TestWrapWithAuthManagerUsesProviderCredentials(t *testing.T) {
 			AuthStrategy: AuthStrategyCredentialFirst,
 		},
 	}
-	wrapped := WrapWithAuthManager(base, "openai", authMgr)
+	wrapped := WrapWithAuthManager(base, "openai", cliauthMgr)
 	if _, err := wrapped.Generate(context.Background(), &GenerateRequest{}); err != nil {
 		t.Fatalf("generate: %v", err)
 	}

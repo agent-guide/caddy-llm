@@ -33,11 +33,11 @@ type App struct {
 	// Routes lists statically configured gateway routes from the Caddyfile app block.
 	Routes []routepkg.Route `json:"routes,omitempty"`
 
-	logger       *zap.Logger
-	authManager  *manager.Manager
-	configStorer configstoreIntf.ConfigStorer
-	providers    map[string]provider.Provider
-	agentGateway *AgentGateway
+	logger         *zap.Logger
+	cliauthManager *manager.Manager
+	configStorer   configstoreIntf.ConfigStorer
+	providers      map[string]provider.Provider
+	agentGateway   *AgentGateway
 }
 
 // CaddyModule returns the Caddy module information.
@@ -61,14 +61,14 @@ func (a *App) Provision(ctx caddy.Context) error {
 		return fmt.Errorf("get credential store: %w", err)
 	}
 
-	a.authManager = manager.NewManager(credentialStore, nil, nil)
+	a.cliauthManager = manager.NewManager(credentialStore, nil, nil)
 	if err := a.provisionProviders(ctx); err != nil {
 		return fmt.Errorf("provision providers: %w", err)
 	}
 	if err := a.provisionAuthenticators(ctx); err != nil {
 		return fmt.Errorf("provision authenticators: %w", err)
 	}
-	if err := a.authManager.Load(ctx); err != nil {
+	if err := a.cliauthManager.Load(ctx); err != nil {
 		return fmt.Errorf("load credentials: %w", err)
 	}
 
@@ -76,16 +76,16 @@ func (a *App) Provision(ctx caddy.Context) error {
 	if err != nil {
 		return fmt.Errorf("configure agent gateway: %w", err)
 	}
-	a.agentGateway.Configure(routeLoader, providerResolver, localAPIKeyStore, a.authManager, nil)
+	a.agentGateway.Configure(routeLoader, providerResolver, localAPIKeyStore, a.cliauthManager, nil)
 	a.agentGateway.SetRoutes(a.Routes)
 
 	a.logger.Info("Agent Gateway provisioned")
 	return nil
 }
 
-// AuthManager returns the credential manager shared across the gateway.
-func (a *App) AuthManager() *manager.Manager {
-	return a.authManager
+// CLIAuthManager returns the CLI credential manager shared across the gateway.
+func (a *App) CLIAuthManager() *manager.Manager {
+	return a.cliauthManager
 }
 
 // AgentGateway returns the gateway instance owned by this app.
@@ -116,8 +116,8 @@ func (a *App) Validate() error {
 
 // Start starts the app.
 func (a *App) Start() error {
-	if a.authManager != nil {
-		a.authManager.StartRefreshLoop(context.Background())
+	if a.cliauthManager != nil {
+		a.cliauthManager.StartRefreshLoop(context.Background())
 	}
 	a.logger.Info("Agent Gateway started")
 	return nil
@@ -125,8 +125,8 @@ func (a *App) Start() error {
 
 // Stop stops the app.
 func (a *App) Stop() error {
-	if a.authManager != nil {
-		a.authManager.StopRefreshLoop()
+	if a.cliauthManager != nil {
+		a.cliauthManager.StopRefreshLoop()
 	}
 	return nil
 }
@@ -226,7 +226,7 @@ func (a *App) registerLoadedAuthenticators(loaded map[string]any) error {
 		if !ok {
 			return fmt.Errorf("authenticator module %q does not implement manager.Authenticator", name)
 		}
-		a.authManager.RegisterAuthenticator(name, auth)
+		a.cliauthManager.RegisterAuthenticator(name, auth)
 	}
 	return nil
 }

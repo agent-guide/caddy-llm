@@ -2,21 +2,14 @@ package manager
 
 import (
 	"context"
+	"math"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/agent-guide/caddy-agent-gateway/llm/cliauth/credential"
-)
-
-// schedulerStrategy identifies the built-in routing semantics.
-type schedulerStrategy int
-
-const (
-	schedulerStrategyRoundRobin schedulerStrategy = iota
-	schedulerStrategyFillFirst
-	schedulerStrategyCustom
 )
 
 // scheduledState describes how a credential participates in a model shard.
@@ -32,7 +25,7 @@ const (
 // authScheduler keeps the incremental per-provider/model scheduling state.
 type authScheduler struct {
 	mu            sync.Mutex
-	strategy      schedulerStrategy
+	strategy      Strategy
 	providers     map[string]*providerScheduler
 	credProviders map[string]string // credID -> providerKey
 	mixedCursors  map[string]int
@@ -53,7 +46,7 @@ type modelScheduler struct {
 	modelKey        string
 	entries         map[string]*scheduledCred
 	priorityOrder   []int
-	readyByPriority map[int]*readyBucket
+	readyByPriority map[int]*ReadyBucket
 	blocked         []*scheduledCred
 }
 
@@ -64,40 +57,25 @@ type scheduledCred struct {
 	nextRetryAt time.Time
 }
 
-type readyBucket struct {
-	flat   []*scheduledCred
-	cursor int
-}
 
 // newAuthScheduler constructs an empty scheduler.
-func newAuthScheduler(selector Selector) *authScheduler {
+func newAuthScheduler(strategy Strategy) *authScheduler {
 	return &authScheduler{
-		strategy:      selectorStrategy(selector),
+		strategy:      strategy,
 		providers:     make(map[string]*providerScheduler),
 		credProviders: make(map[string]string),
 		mixedCursors:  make(map[string]int),
 	}
 }
 
-func selectorStrategy(selector Selector) schedulerStrategy {
-	switch selector.(type) {
-	case *FillFirstSelector:
-		return schedulerStrategyFillFirst
-	case nil, *RoundRobinSelector:
-		return schedulerStrategyRoundRobin
-	default:
-		return schedulerStrategyCustom
-	}
-}
-
-// setSelector updates the active strategy.
-func (s *authScheduler) setSelector(selector Selector) {
+// setStrategy updates the active selection strategy.
+func (s *authScheduler) setStrategy(strategy Strategy) {
 	if s == nil {
 		return
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.strategy = selectorStrategy(selector)
+	s.strategy = strategy
 	s.mixedCursors = make(map[string]int)
 }
 
@@ -162,12 +140,12 @@ func (s *authScheduler) pick(_ context.Context, provider, model string, tried ma
 		return nil, &credential.Error{Code: "credential_not_found", Message: "no credential available"}
 	}
 
-	predicate := func(entry *scheduledCred) bool {
-		if entry == nil || entry.cred == nil {
+	predicate := func(cred *credential.Credential) bool {
+		if cred == nil {
 			return false
 		}
 		if len(tried) > 0 {
-			if _, ok := tried[entry.cred.ID]; ok {
+			if _, ok := tried[cred.ID]; ok {
 				return false
 			}
 		}
@@ -186,7 +164,7 @@ func (s *authScheduler) upsertLocked(cred *credential.Credential, now time.Time)
 	}
 	credID := strings.TrimSpace(cred.ID)
 	providerKey := strings.ToLower(strings.TrimSpace(cred.Provider))
-	if credID == "" || providerKey == "" || cred.Disabled {
+	if credID == "" || providerKey == "" || cred.IsDisabled() {
 		s.removeLocked(credID)
 		return
 	}
@@ -264,7 +242,7 @@ func (p *providerScheduler) ensureModelLocked(modelKey string, now time.Time) *m
 	shard := &modelScheduler{
 		modelKey:        modelKey,
 		entries:         make(map[string]*scheduledCred),
-		readyByPriority: make(map[int]*readyBucket),
+		readyByPriority: make(map[int]*ReadyBucket),
 	}
 	for _, meta := range p.creds {
 		if meta != nil {
@@ -358,7 +336,7 @@ func (m *modelScheduler) promoteExpiredLocked(now time.Time) {
 	}
 }
 
-func (m *modelScheduler) pickReadyLocked(strategy schedulerStrategy, predicate func(*scheduledCred) bool) *credential.Credential {
+func (m *modelScheduler) pickReadyLocked(strategy Strategy, predicate func(*credential.Credential) bool) *credential.Credential {
 	if m == nil {
 		return nil
 	}
@@ -372,7 +350,7 @@ func (m *modelScheduler) pickReadyLocked(strategy schedulerStrategy, predicate f
 		if bucket == nil {
 			continue
 		}
-		if hasMatch(bucket.flat, predicate) {
+		if hasMatch(bucket, predicate) {
 			if !found || p > bestPriority {
 				bestPriority = p
 				found = true
@@ -383,50 +361,25 @@ func (m *modelScheduler) pickReadyLocked(strategy schedulerStrategy, predicate f
 		return nil
 	}
 
-	bucket := m.readyByPriority[bestPriority]
-	if strategy == schedulerStrategyFillFirst {
-		for _, entry := range bucket.flat {
-			if predicate == nil || predicate(entry) {
-				return entry.cred
-			}
-		}
-		return nil
-	}
-
-	// Round-robin.
-	n := len(bucket.flat)
-	if n == 0 {
-		return nil
-	}
-	start := bucket.cursor % n
-	for offset := 0; offset < len(bucket.flat); offset++ {
-		index := (start + offset) % len(bucket.flat)
-		entry := bucket.flat[index]
-		if predicate != nil && !predicate(entry) {
-			continue
-		}
-		bucket.cursor = index + 1
-		return entry.cred
-	}
-	return nil
+	return strategy.PickFromBucket(m.readyByPriority[bestPriority], predicate)
 }
 
-func hasMatch(flat []*scheduledCred, predicate func(*scheduledCred) bool) bool {
-	for _, entry := range flat {
-		if predicate == nil || predicate(entry) {
+func hasMatch(bucket *ReadyBucket, predicate func(*credential.Credential) bool) bool {
+	for _, cred := range bucket.creds {
+		if predicate == nil || predicate(cred) {
 			return true
 		}
 	}
 	return false
 }
 
-func (m *modelScheduler) unavailableErrorLocked(provider, model string, predicate func(*scheduledCred) bool) error {
+func (m *modelScheduler) unavailableErrorLocked(provider, model string, predicate func(*credential.Credential) bool) error {
 	now := time.Now()
 	total := 0
 	cooldownCount := 0
 	earliest := time.Time{}
 	for _, entry := range m.entries {
-		if predicate != nil && !predicate(entry) {
+		if predicate != nil && !predicate(entry.cred) {
 			continue
 		}
 		total++
@@ -451,8 +404,16 @@ func (m *modelScheduler) unavailableErrorLocked(provider, model string, predicat
 	return &credential.Error{Code: "credential_unavailable", Message: "no credential available"}
 }
 
+func formatDuration(d time.Duration) string {
+	secs := int(math.Ceil(d.Seconds()))
+	if secs <= 0 {
+		return "0s"
+	}
+	return strconv.Itoa(secs) + "s"
+}
+
 func (m *modelScheduler) rebuildIndexesLocked() {
-	m.readyByPriority = make(map[int]*readyBucket)
+	m.readyByPriority = make(map[int]*ReadyBucket)
 	m.priorityOrder = m.priorityOrder[:0]
 	m.blocked = m.blocked[:0]
 
@@ -472,7 +433,11 @@ func (m *modelScheduler) rebuildIndexesLocked() {
 
 	for priority, entries := range byPriority {
 		sort.Slice(entries, func(i, j int) bool { return entries[i].cred.ID < entries[j].cred.ID })
-		m.readyByPriority[priority] = &readyBucket{flat: entries}
+		creds := make([]*credential.Credential, len(entries))
+		for i, e := range entries {
+			creds[i] = e.cred
+		}
+		m.readyByPriority[priority] = &ReadyBucket{creds: creds}
 		m.priorityOrder = append(m.priorityOrder, priority)
 	}
 	sort.Slice(m.priorityOrder, func(i, j int) bool { return m.priorityOrder[i] > m.priorityOrder[j] })

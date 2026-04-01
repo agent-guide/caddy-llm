@@ -1,33 +1,59 @@
 package manager
 
 import (
-	"context"
-	"math"
-	"sort"
-	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/agent-guide/caddy-agent-gateway/llm/cliauth/credential"
 )
 
-// Selector chooses a credential candidate for a request.
-type Selector interface {
-	Pick(ctx context.Context, provider, model string, creds []*credential.Credential) (*credential.Credential, error)
+// Strategy picks a credential from a pre-filtered, priority-sorted ReadyBucket.
+// Implement this interface to provide a custom selection algorithm.
+type Strategy interface {
+	PickFromBucket(bucket *ReadyBucket, predicate func(*credential.Credential) bool) *credential.Credential
 }
 
-// RoundRobinSelector provides a provider-scoped round-robin selection strategy.
-type RoundRobinSelector struct {
-	mu      sync.Mutex
-	cursors map[string]int
-	maxKeys int
+// ReadyBucket holds credentials at one priority level that are ready for selection.
+type ReadyBucket struct {
+	creds  []*credential.Credential
+	cursor int
 }
 
-// FillFirstSelector selects the first available credential (deterministic ordering).
-// This "burns" one credential before moving to the next, useful for staggering
-// rolling-window subscription caps.
+// RoundRobinSelector distributes requests evenly across available credentials.
+type RoundRobinSelector struct{}
+
+// FillFirstSelector exhausts one credential before moving to the next, useful
+// for staggering rolling-window subscription caps.
 type FillFirstSelector struct{}
+
+// PickFromBucket picks the next credential using round-robin within the bucket.
+func (s *RoundRobinSelector) PickFromBucket(bucket *ReadyBucket, predicate func(*credential.Credential) bool) *credential.Credential {
+	n := len(bucket.creds)
+	if n == 0 {
+		return nil
+	}
+	start := bucket.cursor % n
+	for offset := 0; offset < n; offset++ {
+		index := (start + offset) % n
+		cred := bucket.creds[index]
+		if predicate != nil && !predicate(cred) {
+			continue
+		}
+		bucket.cursor = index + 1
+		return cred
+	}
+	return nil
+}
+
+// PickFromBucket picks the first matching credential in the bucket.
+func (s *FillFirstSelector) PickFromBucket(bucket *ReadyBucket, predicate func(*credential.Credential) bool) *credential.Credential {
+	for _, cred := range bucket.creds {
+		if predicate == nil || predicate(cred) {
+			return cred
+		}
+	}
+	return nil
+}
 
 type blockReason int
 
@@ -44,7 +70,7 @@ func isCredentialBlockedForModel(cred *credential.Credential, model string, now 
 	if cred == nil {
 		return true, blockReasonOther, time.Time{}
 	}
-	if cred.Disabled || cred.Status == credential.StatusDisabled {
+	if cred.IsDisabled() {
 		return true, blockReasonDisabled, time.Time{}
 	}
 
@@ -107,124 +133,4 @@ func credentialPriority(cred *credential.Credential) int {
 		return 0
 	}
 	return cred.Priority()
-}
-
-// getAvailableCredentials filters the candidate list to those currently available,
-// grouping by priority and returning the highest-priority group.
-func getAvailableCredentials(creds []*credential.Credential, provider, model string, now time.Time) ([]*credential.Credential, error) {
-	if len(creds) == 0 {
-		return nil, &credential.Error{Code: "credential_not_found", Message: "no credentials configured"}
-	}
-
-	type group struct {
-		creds         []*credential.Credential
-		cooldownCount int
-		earliest      time.Time
-	}
-	byPriority := make(map[int]*group)
-	totalCooldown := 0
-	globalEarliest := time.Time{}
-
-	for _, cred := range creds {
-		blocked, reason, next := isCredentialBlockedForModel(cred, model, now)
-		if !blocked {
-			priority := credentialPriority(cred)
-			g := byPriority[priority]
-			if g == nil {
-				g = &group{}
-				byPriority[priority] = g
-			}
-			g.creds = append(g.creds, cred)
-			continue
-		}
-		if reason == blockReasonCooldown {
-			totalCooldown++
-			if !next.IsZero() && (globalEarliest.IsZero() || next.Before(globalEarliest)) {
-				globalEarliest = next
-			}
-		}
-	}
-
-	if len(byPriority) == 0 {
-		if totalCooldown == len(creds) && !globalEarliest.IsZero() {
-			resetIn := globalEarliest.Sub(now)
-			if resetIn < 0 {
-				resetIn = 0
-			}
-			return nil, &cooldownError{
-				model:    model,
-				provider: provider,
-				resetIn:  formatDuration(resetIn),
-			}
-		}
-		return nil, &credential.Error{Code: "credential_unavailable", Message: "no credentials available"}
-	}
-
-	// Pick the highest priority.
-	bestPriority := 0
-	found := false
-	for p := range byPriority {
-		if !found || p > bestPriority {
-			bestPriority = p
-			found = true
-		}
-	}
-
-	available := byPriority[bestPriority].creds
-	if len(available) > 1 {
-		sort.Slice(available, func(i, j int) bool { return available[i].ID < available[j].ID })
-	}
-	return available, nil
-}
-
-func formatDuration(d time.Duration) string {
-	secs := int(math.Ceil(d.Seconds()))
-	if secs <= 0 {
-		return "0s"
-	}
-	return strconv.Itoa(secs) + "s"
-}
-
-// Pick selects the next available credential using round-robin per provider+model.
-func (s *RoundRobinSelector) Pick(ctx context.Context, provider, model string, creds []*credential.Credential) (*credential.Credential, error) {
-	now := time.Now()
-	available, err := getAvailableCredentials(creds, provider, model, now)
-	if err != nil {
-		return nil, err
-	}
-
-	key := provider + ":" + canonicalModelKey(model)
-
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	if s.cursors == nil {
-		s.cursors = make(map[string]int)
-	}
-
-	limit := s.maxKeys
-	if limit <= 0 {
-		limit = 4096
-	}
-	if _, ok := s.cursors[key]; !ok && len(s.cursors) >= limit {
-		s.cursors = make(map[string]int)
-	}
-
-	index := s.cursors[key]
-	if index >= 2_147_483_640 {
-		index = 0
-	}
-	s.cursors[key] = index + 1
-
-	return available[index%len(available)], nil
-}
-
-// Pick selects the first available credential deterministically.
-func (s *FillFirstSelector) Pick(_ context.Context, provider, model string, creds []*credential.Credential) (*credential.Credential, error) {
-	now := time.Now()
-	available, err := getAvailableCredentials(creds, provider, model, now)
-	if err != nil {
-		return nil, err
-	}
-	return available[0], nil
 }

@@ -33,8 +33,8 @@ func (a *testAuthenticator) RefreshLead(context.Context, *credential.Credential)
 }
 
 func TestCLIAuthResolvesAuthenticatorAndRegistersCredential(t *testing.T) {
-	authMgr := manager.NewManager(nil, nil, nil)
-	authMgr.RegisterAuthenticator("codex", &testAuthenticator{
+	cliauthMgr := manager.NewManager(nil, nil, nil)
+	cliauthMgr.RegisterAuthenticator("codex", &testAuthenticator{
 		provider: "openai",
 		loginFn: func(context.Context) (*credential.Credential, error) {
 			return &credential.Credential{
@@ -45,7 +45,7 @@ func TestCLIAuthResolvesAuthenticatorAndRegistersCredential(t *testing.T) {
 		},
 	})
 
-	handler := NewHandler(authMgr, nil, nil, "", "")
+	handler := NewHandler(cliauthMgr, nil, nil, "", "")
 	req := httptest.NewRequest(http.MethodPost, "/admin/cliauth/codex", nil)
 	rec := httptest.NewRecorder()
 
@@ -57,7 +57,7 @@ func TestCLIAuthResolvesAuthenticatorAndRegistersCredential(t *testing.T) {
 
 	deadline := time.Now().Add(500 * time.Millisecond)
 	for time.Now().Before(deadline) {
-		if cred := authMgr.Get("cred-openai-1"); cred != nil {
+		if cred := cliauthMgr.Get("cred-openai-1"); cred != nil {
 			if cred.Provider != "openai" {
 				t.Fatalf("unexpected provider: got %q want %q", cred.Provider, "openai")
 			}
@@ -82,8 +82,8 @@ func TestCLIAuthReturnsNotFoundForUnknownCliname(t *testing.T) {
 }
 
 func TestCLIAuthStatusReportsCompletion(t *testing.T) {
-	authMgr := manager.NewManager(nil, nil, nil)
-	authMgr.RegisterAuthenticator("codex", &testAuthenticator{
+	cliauthMgr := manager.NewManager(nil, nil, nil)
+	cliauthMgr.RegisterAuthenticator("codex", &testAuthenticator{
 		provider: "openai",
 		loginFn: func(context.Context) (*credential.Credential, error) {
 			time.Sleep(20 * time.Millisecond)
@@ -94,7 +94,7 @@ func TestCLIAuthStatusReportsCompletion(t *testing.T) {
 		},
 	})
 
-	handler := NewHandler(authMgr, nil, nil, "", "")
+	handler := NewHandler(cliauthMgr, nil, nil, "", "")
 
 	startReq := httptest.NewRequest(http.MethodPost, "/admin/cliauth/codex", nil)
 	startRec := httptest.NewRecorder()
