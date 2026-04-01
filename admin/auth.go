@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/agent-guide/caddy-agent-gateway/internal/utils"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -72,11 +73,11 @@ func (h *Handler) requireAuth(next http.HandlerFunc) http.HandlerFunc {
 		}
 		token := bearerToken(r)
 		if token == "" {
-			writeError(w, http.StatusUnauthorized, "authentication required")
+			_ = utils.WriteError(w, http.StatusUnauthorized, "authentication required")
 			return
 		}
 		if _, ok := h.sessions.lookup(token); !ok {
-			writeError(w, http.StatusUnauthorized, "invalid or expired session")
+			_ = utils.WriteError(w, http.StatusUnauthorized, "invalid or expired session")
 			return
 		}
 		next(w, r)
@@ -90,16 +91,16 @@ func (h *Handler) handleLogin(w http.ResponseWriter, r *http.Request) {
 		Username string `json:"username"`
 		Password string `json:"password"`
 	}
-	if err := decodeJSON(r, &req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
+	if err := utils.DecodeJSON(r, &req); err != nil {
+		_ = utils.WriteError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
 	if req.Username == "" || req.Password == "" {
-		writeError(w, http.StatusBadRequest, "username and password are required")
+		_ = utils.WriteError(w, http.StatusBadRequest, "username and password are required")
 		return
 	}
 	if h.adminUsername == "" {
-		writeError(w, http.StatusServiceUnavailable, "admin credentials not configured")
+		_ = utils.WriteError(w, http.StatusServiceUnavailable, "admin credentials not configured")
 		return
 	}
 
@@ -110,16 +111,16 @@ func (h *Handler) handleLogin(w http.ResponseWriter, r *http.Request) {
 	}
 	err := bcrypt.CompareHashAndPassword([]byte(hash), []byte(req.Password))
 	if req.Username != h.adminUsername || err != nil {
-		writeError(w, http.StatusUnauthorized, "invalid credentials")
+		_ = utils.WriteError(w, http.StatusUnauthorized, "invalid credentials")
 		return
 	}
 
 	token, err := h.sessions.create(req.Username)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to create session")
+		_ = utils.WriteError(w, http.StatusInternalServerError, "failed to create session")
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]string{
+	_ = utils.WriteJSON(w, http.StatusOK, map[string]string{
 		"token":    token,
 		"username": req.Username,
 	})
@@ -131,7 +132,7 @@ func (h *Handler) handleLogout(w http.ResponseWriter, r *http.Request) {
 	if token := bearerToken(r); token != "" {
 		h.sessions.revoke(token)
 	}
-	writeJSON(w, http.StatusOK, map[string]string{"status": "logged_out"})
+	_ = utils.WriteJSON(w, http.StatusOK, map[string]string{"status": "logged_out"})
 }
 
 // handleMe returns the current authenticated user's info.
@@ -140,10 +141,10 @@ func (h *Handler) handleMe(w http.ResponseWriter, r *http.Request) {
 	token := bearerToken(r)
 	sess, ok := h.sessions.lookup(token)
 	if !ok {
-		writeError(w, http.StatusUnauthorized, "not authenticated")
+		_ = utils.WriteError(w, http.StatusUnauthorized, "not authenticated")
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{
+	_ = utils.WriteJSON(w, http.StatusOK, map[string]any{
 		"username":   sess.username,
 		"created_at": sess.createdAt,
 	})

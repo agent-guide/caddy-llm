@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/agent-guide/caddy-agent-gateway/internal/utils"
 	"go.uber.org/zap"
 )
 
@@ -26,19 +27,19 @@ type cliAuthStatus struct {
 // credential is registered with the auth manager.
 func (h *Handler) handleCLIAuth(w http.ResponseWriter, r *http.Request) {
 	if h.cliauthManager == nil {
-		writeError(w, http.StatusServiceUnavailable, "auth manager not configured")
+		_ = utils.WriteError(w, http.StatusServiceUnavailable, "auth manager not configured")
 		return
 	}
 
 	requestedName := strings.ToLower(strings.TrimSpace(r.PathValue("cliname")))
 	if requestedName == "" {
-		writeError(w, http.StatusBadRequest, "cliname is required")
+		_ = utils.WriteError(w, http.StatusBadRequest, "cliname is required")
 		return
 	}
 
 	auth, ok := h.cliauthManager.GetAuthenticator(requestedName)
 	if !ok {
-		writeError(w, http.StatusNotFound, requestedName+" authenticator not registered")
+		_ = utils.WriteError(w, http.StatusNotFound, requestedName+" authenticator not registered")
 		return
 	}
 
@@ -78,7 +79,7 @@ func (h *Handler) handleCLIAuth(w http.ResponseWriter, r *http.Request) {
 			zap.String("credential_id", cred.ID))
 	}()
 
-	writeJSON(w, http.StatusAccepted, map[string]string{
+	_ = utils.WriteJSON(w, http.StatusAccepted, map[string]string{
 		"status":  "login_started",
 		"cliname": requestedName,
 		"message": "CLI login initiated. Complete the provider authentication flow on the server to register the credential.",
@@ -90,21 +91,21 @@ func (h *Handler) handleCLIAuth(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) handleCLIAuthStatus(w http.ResponseWriter, r *http.Request) {
 	cliname := strings.ToLower(strings.TrimSpace(r.PathValue("cliname")))
 	if cliname == "" {
-		writeError(w, http.StatusBadRequest, "cliname is required")
+		_ = utils.WriteError(w, http.StatusBadRequest, "cliname is required")
 		return
 	}
 
 	val, ok := h.cliAuthSessions.Load(cliname)
 	if !ok {
-		writeError(w, http.StatusNotFound, "no login session found for "+cliname)
+		_ = utils.WriteError(w, http.StatusNotFound, "no login session found for "+cliname)
 		return
 	}
 	status, ok := val.(cliAuthStatus)
 	if !ok {
-		writeError(w, http.StatusInternalServerError, "invalid login session state")
+		_ = utils.WriteError(w, http.StatusInternalServerError, "invalid login session state")
 		return
 	}
-	writeJSON(w, http.StatusOK, status)
+	_ = utils.WriteJSON(w, http.StatusOK, status)
 }
 
 func (h *Handler) storeCLIAuthStatus(cliname string, status *cliAuthStatus) {

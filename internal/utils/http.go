@@ -16,3 +16,9 @@ func WriteJSON(w http.ResponseWriter, status int, v any) error {
 func WriteError(w http.ResponseWriter, status int, message string) error {
 	return WriteJSON(w, status, map[string]string{"error": message})
 }
+
+// DecodeJSON decodes a JSON request body into dest and closes the body.
+func DecodeJSON(r *http.Request, dest any) error {
+	defer r.Body.Close()
+	return json.NewDecoder(r.Body).Decode(dest)
+}

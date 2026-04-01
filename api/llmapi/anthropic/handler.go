@@ -12,6 +12,7 @@ import (
 	"github.com/agent-guide/caddy-agent-gateway/api"
 	"github.com/agent-guide/caddy-agent-gateway/gateway"
 	routepkg "github.com/agent-guide/caddy-agent-gateway/gateway/route"
+	"github.com/agent-guide/caddy-agent-gateway/internal/utils"
 	"github.com/agent-guide/caddy-agent-gateway/llm/provider"
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
@@ -84,13 +85,13 @@ func (h *Handler) ServeLLMApi(w http.ResponseWriter, r *http.Request) error {
 func (h *Handler) handleMessages(w http.ResponseWriter, r *http.Request) {
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "failed to read request body")
+		_ = utils.WriteError(w, http.StatusBadRequest, "failed to read request body")
 		return
 	}
 
 	var req MessagesRequest
 	if err := json.Unmarshal(body, &req); err != nil {
-		writeError(w, http.StatusBadRequest, fmt.Sprintf("invalid request: %s", err))
+		_ = utils.WriteError(w, http.StatusBadRequest, fmt.Sprintf("invalid request: %s", err))
 		return
 	}
 
@@ -102,7 +103,7 @@ func (h *Handler) handleMessages(w http.ResponseWriter, r *http.Request) {
 		Stream:      req.Stream,
 	})
 	if err != nil {
-		writeError(w, api.StatusCode(err), err.Error())
+		_ = utils.WriteError(w, api.StatusCode(err), err.Error())
 		return
 	}
 
@@ -113,16 +114,16 @@ func (h *Handler) handleMessages(w http.ResponseWriter, r *http.Request) {
 
 	resp, err := resolved.Provider.Generate(r.Context(), genReq)
 	if err != nil {
-		writeError(w, http.StatusBadGateway, err.Error())
+		_ = utils.WriteError(w, http.StatusBadGateway, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, conv.FromInternal(resp, req.Model))
+	_ = utils.WriteJSON(w, http.StatusOK, conv.FromInternal(resp, req.Model))
 }
 
 func (h *Handler) serveStream(w http.ResponseWriter, ctx context.Context, prov provider.Provider, genReq *provider.GenerateRequest, model string) {
 	stream, err := prov.Stream(ctx, genReq)
 	if err != nil {
-		writeError(w, http.StatusBadGateway, err.Error())
+		_ = utils.WriteError(w, http.StatusBadGateway, err.Error())
 		return
 	}
 	defer stream.Close()
@@ -184,7 +185,7 @@ func (h *Handler) serveStream(w http.ResponseWriter, ctx context.Context, prov p
 }
 
 func (h *Handler) handleCountTokens(w http.ResponseWriter, r *http.Request) {
-	writeError(w, http.StatusNotImplemented, "count_tokens is not supported")
+	_ = utils.WriteError(w, http.StatusNotImplemented, "count_tokens is not supported")
 }
 
 // extractText returns the text content from a streaming message chunk.
@@ -201,16 +202,6 @@ func writeSSEEvent(w http.ResponseWriter, event string, data any) {
 		return
 	}
 	fmt.Fprintf(w, "event: %s\ndata: %s\n\n", event, payload)
-}
-
-func writeJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(v)
-}
-
-func writeError(w http.ResponseWriter, status int, msg string) {
-	writeJSON(w, status, map[string]string{"error": msg})
 }
 
 var (
