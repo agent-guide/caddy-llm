@@ -39,6 +39,9 @@ function IconAgent({ className }: { className?: string }) {
 function IconMemory({ className }: { className?: string }) {
   return <svg className={className} fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24" aria-hidden="true"><rect x="2" y="4" width="20" height="16" rx="2" /><path d="M7 4v16" /><path d="M17 4v16" /><path d="M2 12h20" /></svg>;
 }
+function IconRoute({ className }: { className?: string }) {
+  return <svg className={className} fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24" aria-hidden="true"><circle cx="6" cy="19" r="2" /><circle cx="18" cy="5" r="2" /><path d="M6 17V9a6 6 0 0 1 6-6h1" /><path d="M18 7v8a6 6 0 0 1-6 6H11" /></svg>;
+}
 
 const NAV_SECTIONS = [
   { key: "general", label: "General" },
@@ -48,6 +51,7 @@ const NAV_SECTIONS = [
 
 const NAV_ITEMS = [
   { href: "/dashboard", label: "Overview", icon: IconHome, section: "general" },
+  { href: "/dashboard/routes", label: "Routes", icon: IconRoute, section: "general" },
   { href: "/dashboard/providers", label: "Providers", icon: IconLayers, section: "llm" },
   { href: "/dashboard/models", label: "Models", icon: IconBrain, section: "llm" },
   { href: "/dashboard/agents", label: "Agents", icon: IconAgent, section: "llm" },
