@@ -21,7 +21,6 @@ func (localAPIKeyRecord) TableName() string { return "local_api_keys" }
 
 type LocalAPIKeyStore struct {
 	*sqliteJSONStore
-	userID string
 }
 
 func NewLocalAPIKeyStore(ctx context.Context, db *gorm.DB, decodeLocalAPIKey intf.ConfigObjectDecoder) (*LocalAPIKeyStore, error) {
@@ -31,17 +30,20 @@ func NewLocalAPIKeyStore(ctx context.Context, db *gorm.DB, decodeLocalAPIKey int
 
 	return &LocalAPIKeyStore{
 		sqliteJSONStore: newSQLiteJSONStoreWithColumns(db, localAPIKeyRecord{}.TableName(), "local api key", "key", "user_id", "config", decodeLocalAPIKey),
-		userID:          "default",
 	}, nil
 }
 
-func (s *LocalAPIKeyStore) List(ctx context.Context) ([]any, error) {
-	return s.sqliteJSONStore.ListByTagPrefix(ctx, s.userID)
+func (s *LocalAPIKeyStore) ListByUserID(ctx context.Context, userID string) ([]any, error) {
+	return s.sqliteJSONStore.ListByTagPrefix(ctx, userID)
 }
 
-func (s *LocalAPIKeyStore) Save(ctx context.Context, key string, obj any) error {
-	_, err := s.sqliteJSONStore.Save(ctx, key, s.userID, obj)
+func (s *LocalAPIKeyStore) Create(ctx context.Context, key string, userID string, obj any) error {
+	_, err := s.sqliteJSONStore.Create(ctx, key, userID, obj)
 	return err
+}
+
+func (s *LocalAPIKeyStore) Update(ctx context.Context, key string, obj any) error {
+	return s.sqliteJSONStore.Update(ctx, key, obj)
 }
 
 func (s *LocalAPIKeyStore) Delete(ctx context.Context, key string) error {

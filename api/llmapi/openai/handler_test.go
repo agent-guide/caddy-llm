@@ -15,8 +15,10 @@ import (
 	configstoreintf "github.com/agent-guide/caddy-agent-gateway/configstore/intf"
 	"github.com/agent-guide/caddy-agent-gateway/gateway"
 	routepkg "github.com/agent-guide/caddy-agent-gateway/gateway/route"
-	"github.com/cloudwego/eino/schema"
 	"gorm.io/gorm"
+
+	"github.com/cloudwego/eino/schema"
+	"golang.org/x/crypto/bcrypt"
 
 	"github.com/agent-guide/caddy-agent-gateway/llm/cliauth/credential"
 	"github.com/agent-guide/caddy-agent-gateway/llm/cliauth/manager"
@@ -106,8 +108,8 @@ type testLocalAPIKeyStore struct {
 	items map[string]*routepkg.LocalAPIKey
 }
 
-func (s *testLocalAPIKeyStore) List(context.Context) ([]any, error) { return nil, nil }
-func (s *testLocalAPIKeyStore) Save(_ context.Context, key string, obj any) error {
+func (s *testLocalAPIKeyStore) ListByUserID(context.Context, string) ([]any, error) { return nil, nil }
+func (s *testLocalAPIKeyStore) Create(_ context.Context, key string, _ string, obj any) error {
 	item, ok := obj.(*routepkg.LocalAPIKey)
 	if !ok {
 		return errors.New("unexpected type")
@@ -118,6 +120,12 @@ func (s *testLocalAPIKeyStore) Save(_ context.Context, key string, obj any) erro
 	cloned := *item
 	s.items[key] = &cloned
 	return nil
+}
+func (s *testLocalAPIKeyStore) Update(ctx context.Context, key string, obj any) error {
+	if _, ok := s.items[key]; !ok {
+		return errors.New("not found")
+	}
+	return s.Create(ctx, key, "", obj)
 }
 func (s *testLocalAPIKeyStore) Delete(context.Context, string) error { return nil }
 func (s *testLocalAPIKeyStore) Get(_ context.Context, key string) (any, error) {
@@ -226,17 +234,32 @@ func (s *testProviderConfigStore) Get(_ context.Context, id string) (string, any
 
 type testRouteStore struct {
 	items map[string]*routepkg.Route
+	tags  map[string]string
 }
 
-func (s *testRouteStore) List(context.Context) ([]any, error) {
+func (s *testRouteStore) ListByTag(_ context.Context, tag string) ([]any, error) {
 	out := make([]any, 0, len(s.items))
-	for _, item := range s.items {
+	for id, item := range s.items {
+		if tag != "" && s.tags[id] != tag {
+			continue
+		}
 		out = append(out, item)
 	}
 	return out, nil
 }
 
-func (s *testRouteStore) Save(_ context.Context, id string, obj any) error {
+func (s *testRouteStore) ListByTagPrefix(_ context.Context, tagPrefix string) ([]any, error) {
+	out := make([]any, 0, len(s.items))
+	for id, item := range s.items {
+		if tagPrefix != "" && !strings.HasPrefix(s.tags[id], tagPrefix) {
+			continue
+		}
+		out = append(out, item)
+	}
+	return out, nil
+}
+
+func (s *testRouteStore) Create(_ context.Context, id string, tag string, obj any) error {
 	r, ok := obj.(*routepkg.Route)
 	if !ok {
 		return errors.New("unexpected type")
@@ -244,8 +267,12 @@ func (s *testRouteStore) Save(_ context.Context, id string, obj any) error {
 	if s.items == nil {
 		s.items = map[string]*routepkg.Route{}
 	}
+	if s.tags == nil {
+		s.tags = map[string]string{}
+	}
 	cloned := *r
 	s.items[id] = &cloned
+	s.tags[id] = tag
 	return nil
 }
 
@@ -253,11 +280,12 @@ func (s *testRouteStore) Update(ctx context.Context, id string, obj any) error {
 	if _, ok := s.items[id]; !ok {
 		return gorm.ErrRecordNotFound
 	}
-	return s.Save(ctx, id, obj)
+	return s.Create(ctx, id, s.tags[id], obj)
 }
 
 func (s *testRouteStore) Delete(_ context.Context, id string) error {
 	delete(s.items, id)
+	delete(s.tags, id)
 	return nil
 }
 
@@ -746,7 +774,13 @@ func TestAdminProvisionedRouteAndLocalAPIKeyDriveOpenAIHandler(t *testing.T) {
 		routeStore:       &testRouteStore{items: map[string]*routepkg.Route{}},
 		localAPIKeyStore: &testLocalAPIKeyStore{items: map[string]*routepkg.LocalAPIKey{}},
 	}
-	adminHandler := admin.NewHandler(nil, cfgStore, nil, "", "")
+	passwordHash, err := bcrypt.GenerateFromPassword([]byte("secret-pass"), bcrypt.DefaultCost)
+	if err != nil {
+		t.Fatalf("generate password hash: %v", err)
+	}
+
+	adminHandler := admin.NewHandler(nil, cfgStore, nil, "admin", string(passwordHash))
+	adminToken := loginAdminForTest(t, adminHandler, "admin", "secret-pass")
 
 	postJSON := func(path string, body any) {
 		t.Helper()
@@ -755,6 +789,7 @@ func TestAdminProvisionedRouteAndLocalAPIKeyDriveOpenAIHandler(t *testing.T) {
 			t.Fatalf("marshal body for %s: %v", path, err)
 		}
 		req := httptest.NewRequest(http.MethodPost, path, bytes.NewReader(data))
+		req.Header.Set("Authorization", "Bearer "+adminToken)
 		rec := httptest.NewRecorder()
 		adminHandler.ServeHTTP(rec, req)
 		if rec.Code != http.StatusCreated {
@@ -781,6 +816,7 @@ func TestAdminProvisionedRouteAndLocalAPIKeyDriveOpenAIHandler(t *testing.T) {
 	})
 	postJSON("/admin/local_api_keys", routepkg.LocalAPIKey{
 		Key:             "lk-e2e",
+		UserID:          "admin",
 		AllowedRouteIDs: []string{"chat-prod"},
 	})
 
@@ -945,4 +981,35 @@ func firstDataLine(body string) string {
 		}
 	}
 	return ""
+}
+
+func loginAdminForTest(t *testing.T, handler *admin.Handler, username string, password string) string {
+	t.Helper()
+
+	loginBody, err := json.Marshal(map[string]string{
+		"username": username,
+		"password": password,
+	})
+	if err != nil {
+		t.Fatalf("marshal login body: %v", err)
+	}
+
+	loginReq := httptest.NewRequest(http.MethodPost, "/admin/auth/login", bytes.NewReader(loginBody))
+	loginReq.Header.Set("Content-Type", "application/json")
+	loginRec := httptest.NewRecorder()
+	handler.ServeHTTP(loginRec, loginReq)
+	if loginRec.Code != http.StatusOK {
+		t.Fatalf("unexpected login status: got %d want %d body=%s", loginRec.Code, http.StatusOK, loginRec.Body.String())
+	}
+
+	var loginResp struct {
+		Token string `json:"token"`
+	}
+	if err := json.NewDecoder(loginRec.Body).Decode(&loginResp); err != nil {
+		t.Fatalf("decode login response: %v", err)
+	}
+	if loginResp.Token == "" {
+		t.Fatal("login token is empty")
+	}
+	return loginResp.Token
 }

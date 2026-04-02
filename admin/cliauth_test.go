@@ -10,6 +10,7 @@ import (
 
 	"github.com/agent-guide/caddy-agent-gateway/llm/cliauth/credential"
 	"github.com/agent-guide/caddy-agent-gateway/llm/cliauth/manager"
+	"golang.org/x/crypto/bcrypt"
 )
 
 type testAuthenticator struct {
@@ -33,6 +34,11 @@ func (a *testAuthenticator) RefreshLead(context.Context, *credential.Credential)
 }
 
 func TestCLIAuthResolvesAuthenticatorAndRegistersCredential(t *testing.T) {
+	passwordHash, err := bcrypt.GenerateFromPassword([]byte("secret-pass"), bcrypt.DefaultCost)
+	if err != nil {
+		t.Fatalf("generate password hash: %v", err)
+	}
+
 	cliauthMgr := manager.NewManager(nil, nil, nil)
 	cliauthMgr.RegisterAuthenticator("codex", &testAuthenticator{
 		provider: "openai",
@@ -45,8 +51,10 @@ func TestCLIAuthResolvesAuthenticatorAndRegistersCredential(t *testing.T) {
 		},
 	})
 
-	handler := NewHandler(cliauthMgr, nil, nil, "", "")
+	handler := NewHandler(cliauthMgr, nil, nil, "admin", string(passwordHash))
+	token := loginForTest(t, handler, "admin", "secret-pass")
 	req := httptest.NewRequest(http.MethodPost, "/admin/cliauth/codex", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
 	rec := httptest.NewRecorder()
 
 	handler.ServeHTTP(rec, req)
@@ -70,8 +78,15 @@ func TestCLIAuthResolvesAuthenticatorAndRegistersCredential(t *testing.T) {
 }
 
 func TestCLIAuthReturnsNotFoundForUnknownCliname(t *testing.T) {
-	handler := NewHandler(manager.NewManager(nil, nil, nil), nil, nil, "", "")
+	passwordHash, err := bcrypt.GenerateFromPassword([]byte("secret-pass"), bcrypt.DefaultCost)
+	if err != nil {
+		t.Fatalf("generate password hash: %v", err)
+	}
+
+	handler := NewHandler(manager.NewManager(nil, nil, nil), nil, nil, "admin", string(passwordHash))
+	token := loginForTest(t, handler, "admin", "secret-pass")
 	req := httptest.NewRequest(http.MethodPost, "/admin/cliauth/unknown", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
 	rec := httptest.NewRecorder()
 
 	handler.ServeHTTP(rec, req)
@@ -82,6 +97,11 @@ func TestCLIAuthReturnsNotFoundForUnknownCliname(t *testing.T) {
 }
 
 func TestCLIAuthStatusReportsCompletion(t *testing.T) {
+	passwordHash, err := bcrypt.GenerateFromPassword([]byte("secret-pass"), bcrypt.DefaultCost)
+	if err != nil {
+		t.Fatalf("generate password hash: %v", err)
+	}
+
 	cliauthMgr := manager.NewManager(nil, nil, nil)
 	cliauthMgr.RegisterAuthenticator("codex", &testAuthenticator{
 		provider: "openai",
@@ -94,9 +114,11 @@ func TestCLIAuthStatusReportsCompletion(t *testing.T) {
 		},
 	})
 
-	handler := NewHandler(cliauthMgr, nil, nil, "", "")
+	handler := NewHandler(cliauthMgr, nil, nil, "admin", string(passwordHash))
+	token := loginForTest(t, handler, "admin", "secret-pass")
 
 	startReq := httptest.NewRequest(http.MethodPost, "/admin/cliauth/codex", nil)
+	startReq.Header.Set("Authorization", "Bearer "+token)
 	startRec := httptest.NewRecorder()
 	handler.ServeHTTP(startRec, startReq)
 	if startRec.Code != http.StatusAccepted {
@@ -106,6 +128,7 @@ func TestCLIAuthStatusReportsCompletion(t *testing.T) {
 	deadline := time.Now().Add(500 * time.Millisecond)
 	for time.Now().Before(deadline) {
 		statusReq := httptest.NewRequest(http.MethodGet, "/admin/cliauth/codex/status", nil)
+		statusReq.Header.Set("Authorization", "Bearer "+token)
 		statusRec := httptest.NewRecorder()
 		handler.ServeHTTP(statusRec, statusReq)
 		if statusRec.Code != http.StatusOK {

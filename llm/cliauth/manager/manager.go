@@ -234,7 +234,7 @@ func (m *Manager) Register(ctx context.Context, cred *credential.Credential) err
 		cred.Status = credential.StatusActive
 	}
 	if !shouldSkipPersist(ctx) {
-		if err := m.persist(ctx, cred); err != nil {
+		if err := m.create(ctx, cred); err != nil {
 			return err
 		}
 	}
@@ -258,7 +258,7 @@ func (m *Manager) Update(ctx context.Context, cred *credential.Credential) error
 	cred.UpdatedAt = time.Now().UTC()
 
 	if !shouldSkipPersist(ctx) {
-		if err := m.persist(ctx, cred); err != nil {
+		if err := m.update(ctx, cred); err != nil {
 			return err
 		}
 	}
@@ -623,12 +623,22 @@ func (m *Manager) syncScheduler() {
 	m.scheduler.rebuild(m.snapshotAuths())
 }
 
-func (m *Manager) persist(ctx context.Context, cred *credential.Credential) error {
+func (m *Manager) create(ctx context.Context, cred *credential.Credential) error {
 	if m.store == nil {
 		return nil
 	}
-	if _, err := m.store.Save(ctx, cred.ID, cred.Provider, cred); err != nil {
-		return fmt.Errorf("manager: persist credential %s: %w", cred.ID, err)
+	if _, err := m.store.Create(ctx, cred.ID, cred.Provider, cred); err != nil {
+		return fmt.Errorf("manager: create credential %s: %w", cred.ID, err)
+	}
+	return nil
+}
+
+func (m *Manager) update(ctx context.Context, cred *credential.Credential) error {
+	if m.store == nil {
+		return nil
+	}
+	if err := m.store.Update(ctx, cred.ID, cred); err != nil {
+		return fmt.Errorf("manager: update credential %s: %w", cred.ID, err)
 	}
 	return nil
 }

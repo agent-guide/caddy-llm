@@ -67,3 +67,14 @@ func TestAuthProtectedRouteRequiresFreshBearerToken(t *testing.T) {
 		t.Fatalf("unexpected stale-token status: got %d want %d", staleRec.Code, http.StatusUnauthorized)
 	}
 }
+
+func TestAuthProtectedRouteRejectsRequestsWhenAdminCredentialsAreNotConfigured(t *testing.T) {
+	handler := NewHandler(nil, &testConfigStore{}, nil, "", "")
+
+	req := httptest.NewRequest(http.MethodGet, "/admin/providers", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("unexpected unauthenticated status: got %d want %d", rec.Code, http.StatusUnauthorized)
+	}
+}

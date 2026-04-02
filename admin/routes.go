@@ -13,6 +13,8 @@ import (
 	"gorm.io/gorm"
 )
 
+const defaultRouteTag = ""
+
 // Route defines an admin API route.
 type Route struct {
 	Method      string
@@ -226,7 +228,21 @@ func (h *Handler) handleListRoutes(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	items, err := store.List(r.Context())
+	tagPrefix := r.URL.Query().Get("tag_prefix")
+	tag := r.URL.Query().Get("tag")
+	if tag == "" && tagPrefix == "" {
+		tag = defaultRouteTag
+	}
+
+	var (
+		items []any
+		err   error
+	)
+	if tagPrefix != "" {
+		items, err = store.ListByTagPrefix(r.Context(), tagPrefix)
+	} else {
+		items, err = store.ListByTag(r.Context(), tag)
+	}
 	if err != nil {
 		_ = utils.WriteError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -259,7 +275,12 @@ func (h *Handler) handleCreateRoute(w http.ResponseWriter, r *http.Request) {
 	}
 	route.Policy.Defaults()
 
-	if err := store.Save(r.Context(), route.ID, &route); err != nil {
+	tag := r.URL.Query().Get("tag")
+	if tag == "" {
+		tag = defaultRouteTag
+	}
+
+	if err := store.Create(r.Context(), route.ID, tag, &route); err != nil {
 		_ = utils.WriteError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -353,7 +374,19 @@ func (h *Handler) handleListLocalAPIKeys(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	items, err := store.List(r.Context())
+	userID := r.URL.Query().Get("user_id")
+	sessionUsername := h.sessionUsername(r)
+	if sessionUsername == "" {
+		_ = utils.WriteError(w, http.StatusForbidden, "forbidden")
+		return
+	}
+	if userID != "" && userID != sessionUsername {
+		_ = utils.WriteError(w, http.StatusForbidden, "forbidden")
+		return
+	}
+	userID = sessionUsername
+
+	items, err := store.ListByUserID(r.Context(), userID)
 	if err != nil {
 		_ = utils.WriteError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -373,12 +406,24 @@ func (h *Handler) handleCreateLocalAPIKey(w http.ResponseWriter, r *http.Request
 		_ = utils.WriteError(w, http.StatusBadRequest, fmt.Sprintf("decode request: %v", err))
 		return
 	}
+
+	sessionUsername := h.sessionUsername(r)
+	if sessionUsername == "" {
+		_ = utils.WriteError(w, http.StatusForbidden, "forbidden")
+		return
+	}
+	if key.UserID != "" && key.UserID != sessionUsername {
+		_ = utils.WriteError(w, http.StatusForbidden, "forbidden")
+		return
+	}
+	key.UserID = sessionUsername
+
 	if key.Key == "" {
 		_ = utils.WriteError(w, http.StatusBadRequest, "key is required")
 		return
 	}
 
-	if err := store.Save(r.Context(), key.Key, &key); err != nil {
+	if err := store.Create(r.Context(), key.Key, key.UserID, &key); err != nil {
 		_ = utils.WriteError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -434,7 +479,7 @@ func (h *Handler) handleUpdateLocalAPIKey(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	if err := store.Save(r.Context(), key.Key, &key); err != nil {
+	if err := store.Update(r.Context(), key.Key, &key); err != nil {
 		_ = utils.WriteError(w, http.StatusInternalServerError, err.Error())
 		return
 	}

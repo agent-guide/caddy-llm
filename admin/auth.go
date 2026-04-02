@@ -63,12 +63,12 @@ func bearerToken(r *http.Request) string {
 }
 
 // requireAuth wraps a handler with Bearer-token session authentication.
-// When adminUsername is not configured (empty), auth is skipped — this allows
-// unauthenticated access in development / test environments.
+// Protected admin routes require configured admin credentials and a valid
+// Bearer-token session.
 func (h *Handler) requireAuth(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if h.adminUsername == "" {
-			next(w, r)
+			_ = utils.WriteError(w, http.StatusUnauthorized, "admin authentication not configured")
 			return
 		}
 		token := bearerToken(r)
@@ -148,4 +148,19 @@ func (h *Handler) handleMe(w http.ResponseWriter, r *http.Request) {
 		"username":   sess.username,
 		"created_at": sess.createdAt,
 	})
+}
+
+func (h *Handler) sessionUsername(r *http.Request) string {
+	if h == nil || r == nil {
+		return ""
+	}
+	token := bearerToken(r)
+	if token == "" {
+		return ""
+	}
+	sess, ok := h.sessions.lookup(token)
+	if !ok {
+		return ""
+	}
+	return sess.username
 }

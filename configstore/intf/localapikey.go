@@ -3,9 +3,11 @@ package intf
 import "context"
 
 type LocalAPIKeyStorer interface {
-	List(ctx context.Context) ([]any, error)
+	ListByUserID(ctx context.Context, userID string) ([]any, error)
 
-	Save(ctx context.Context, key string, obj any) error
+	Create(ctx context.Context, key string, userID string, obj any) error
+
+	Update(ctx context.Context, key string, obj any) error
 
 	Delete(ctx context.Context, key string) error
 

@@ -86,7 +86,7 @@ func (s *sqliteJSONStore) ListByTag(ctx context.Context, tag string) ([]any, err
 	return out, nil
 }
 
-func (s *sqliteJSONStore) Save(ctx context.Context, id string, tag string, obj any) (string, error) {
+func (s *sqliteJSONStore) Upsert(ctx context.Context, id string, tag string, obj any) (string, error) {
 	row, err := s.newRecord(id, tag, obj)
 	if err != nil {
 		return "", err
@@ -101,6 +101,45 @@ func (s *sqliteJSONStore) Save(ctx context.Context, id string, tag string, obj a
 		return "", err
 	}
 	return row.ID, nil
+}
+
+func (s *sqliteJSONStore) Create(ctx context.Context, id string, tag string, obj any) (string, error) {
+	row, err := s.newRecord(id, tag, obj)
+	if err != nil {
+		return "", err
+	}
+	if err := s.db.WithContext(ctx).
+		Table(s.table).
+		Create(s.dbRecord(row)).Error; err != nil {
+		return "", err
+	}
+	return row.ID, nil
+}
+
+func (s *sqliteJSONStore) Update(ctx context.Context, id string, obj any) error {
+	if id == "" {
+		return fmt.Errorf("%s id is empty", s.kind)
+	}
+	if obj == nil {
+		return fmt.Errorf("%s config is nil", s.kind)
+	}
+
+	data, err := json.Marshal(obj)
+	if err != nil {
+		return fmt.Errorf("%s marshal: %w", s.kind, err)
+	}
+
+	result := s.db.WithContext(ctx).
+		Table(s.table).
+		Where(s.quotedColumnName(s.idField)+" = ?", id).
+		Update(s.columnName(s.dataField), string(data))
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return gorm.ErrRecordNotFound
+	}
+	return nil
 }
 
 func (s *sqliteJSONStore) Delete(ctx context.Context, id string) error {
@@ -126,9 +165,6 @@ func (s *sqliteJSONStore) Get(ctx context.Context, id string) (string, any, erro
 func (s *sqliteJSONStore) newRecord(id string, tag string, obj any) (sqliteJSONRecord, error) {
 	if id == "" {
 		return sqliteJSONRecord{}, fmt.Errorf("%s id is empty", s.kind)
-	}
-	if tag == "" {
-		return sqliteJSONRecord{}, fmt.Errorf("%s tag is empty", s.kind)
 	}
 	if obj == nil {
 		return sqliteJSONRecord{}, fmt.Errorf("%s config is nil", s.kind)

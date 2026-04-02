@@ -2,6 +2,7 @@ package sqlite
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/agent-guide/caddy-agent-gateway/gateway/route"
@@ -9,7 +10,7 @@ import (
 	"gorm.io/gorm"
 )
 
-func TestRouteStoreReservedGroupColumn(t *testing.T) {
+func TestRouteStoreTagColumn(t *testing.T) {
 	ctx := context.Background()
 
 	db, err := gorm.Open(sqlite.Open("file::memory:?cache=shared"), &gorm.Config{})
@@ -32,11 +33,11 @@ func TestRouteStoreReservedGroupColumn(t *testing.T) {
 		}},
 	}
 
-	if err := store.Save(ctx, want.ID, want); err != nil {
-		t.Fatalf("save route: %v", err)
+	if err := store.Create(ctx, want.ID, defaultRouteTag, want); err != nil {
+		t.Fatalf("create route: %v", err)
 	}
 
-	items, err := store.List(ctx)
+	items, err := store.ListByTag(ctx, defaultRouteTag)
 	if err != nil {
 		t.Fatalf("list routes: %v", err)
 	}
@@ -61,11 +62,71 @@ func TestRouteStoreReservedGroupColumn(t *testing.T) {
 		t.Fatalf("delete route: %v", err)
 	}
 
-	items, err = store.List(ctx)
+	items, err = store.ListByTag(ctx, defaultRouteTag)
 	if err != nil {
 		t.Fatalf("list routes after delete: %v", err)
 	}
 	if len(items) != 0 {
 		t.Fatalf("list routes after delete len = %d, want 0", len(items))
+	}
+}
+
+func TestRouteStoreCreateRejectsDuplicateID(t *testing.T) {
+	ctx := context.Background()
+
+	db, err := gorm.Open(sqlite.Open("file::memory:?cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite db: %v", err)
+	}
+
+	store, err := NewRouteStore(ctx, db, route.DecodeStoredRoute)
+	if err != nil {
+		t.Fatalf("new route store: %v", err)
+	}
+
+	item := &route.Route{
+		ID:   "chat-prod",
+		Name: "chat-prod",
+		Targets: []route.RouteTarget{{
+			ProviderRef: "openai",
+			Mode:        route.TargetModeWeighted,
+			Weight:      1,
+		}},
+	}
+
+	if err := store.Create(ctx, item.ID, defaultRouteTag, item); err != nil {
+		t.Fatalf("create route: %v", err)
+	}
+
+	err = store.Create(ctx, item.ID, defaultRouteTag, item)
+	if err == nil {
+		t.Fatal("expected duplicate create to fail")
+	}
+}
+
+func TestRouteStoreUpdateRejectsMissingID(t *testing.T) {
+	ctx := context.Background()
+
+	db, err := gorm.Open(sqlite.Open("file::memory:?cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite db: %v", err)
+	}
+
+	store, err := NewRouteStore(ctx, db, route.DecodeStoredRoute)
+	if err != nil {
+		t.Fatalf("new route store: %v", err)
+	}
+
+	err = store.Update(ctx, "missing", &route.Route{
+		ID:   "missing",
+		Name: "missing",
+		Targets: []route.RouteTarget{{
+			ProviderRef: "openai",
+			Mode:        route.TargetModeWeighted,
+			Weight:      1,
+		}},
+	})
+	if !errors.Is(err, gorm.ErrRecordNotFound) {
+		t.Fatalf("update missing route error = %v, want %v", err, gorm.ErrRecordNotFound)
 	}
 }

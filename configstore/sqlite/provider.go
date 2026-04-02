@@ -46,17 +46,11 @@ func (s *ProviderConfigStore) ListByName(ctx context.Context, name string) ([]an
 }
 
 func (s *ProviderConfigStore) Create(ctx context.Context, id string, name string, obj any) (string, error) {
-	return s.sqliteJSONStore.Save(ctx, id, name, obj)
+	return s.sqliteJSONStore.Create(ctx, id, name, obj)
 }
 
 func (s *ProviderConfigStore) Update(ctx context.Context, id string, obj any) error {
-	tag, _, err := s.sqliteJSONStore.Get(ctx, id)
-	if err != nil {
-		return err
-	}
-
-	_, err = s.sqliteJSONStore.Save(ctx, id, tag, obj)
-	return err
+	return s.sqliteJSONStore.Update(ctx, id, obj)
 }
 
 func (s *ProviderConfigStore) Delete(ctx context.Context, id string) error {
