@@ -240,19 +240,19 @@ func (app *App) buildGatewayDependencies() (routepkg.RouteLoader, ProviderResolv
 		return nil, staticResolver, nil, nil
 	}
 
-	localAPIKeyStore, err := app.ConfigStore().GetLocalAPIKeyStore(context.Background(), routepkg.DecodeLocalAPIKey)
+	localAPIKeyStore, err := app.ConfigStore().GetLocalAPIKeyStore(context.Background(), routepkg.DecodeStoredLocalAPIKey)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("get local api key store: %w", err)
 	}
 
 	var dynamicResolver ProviderResolver
-	providerStore := app.ConfigStore().GetProviderConfigStore()
+	providerStore, err := app.ConfigStore().GetProviderConfigStore(context.Background(), provider.DecodeStoredProviderConfig)
 	if providerStore != nil {
 		dynamicResolver = newCachedDynamicResolver(providerStore)
 	}
 
 	var routeLoader routepkg.RouteLoader
-	routeStore, err := app.ConfigStore().GetRouteStore(context.Background(), routepkg.DecodeRoute)
+	routeStore, err := app.ConfigStore().GetRouteStore(context.Background(), routepkg.DecodeStoredRoute)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("get route store: %w", err)
 	}

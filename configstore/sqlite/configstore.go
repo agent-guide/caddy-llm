@@ -69,12 +69,6 @@ func (s *SQLiteConfigStore) Provision(ctx caddy.Context) error {
 
 	s.db = db
 
-	providerStore, err := NewProviderConfigStore(ctx, s.db)
-	if err != nil {
-		return fmt.Errorf("init provider config store: %w", err)
-	}
-	s.providerStore = providerStore
-
 	return nil
 }
 
@@ -108,8 +102,13 @@ func (s *SQLiteConfigStore) GetCredentialStore(ctx context.Context, decodeCreden
 	return credentialStore, nil
 }
 
-func (s *SQLiteConfigStore) GetProviderConfigStore() intf.ProviderConfigStorer {
-	return s.providerStore
+func (s *SQLiteConfigStore) GetProviderConfigStore(ctx context.Context, decodeProviderConfig intf.ConfigObjectDecoder) (intf.ProviderConfigStorer, error) {
+	providerStore, err := NewProviderConfigStore(ctx, s.db, decodeProviderConfig)
+	if err != nil {
+		return nil, fmt.Errorf("init provider config store: %w", err)
+	}
+	s.providerStore = providerStore
+	return s.providerStore, nil
 }
 
 func (s *SQLiteConfigStore) GetLocalAPIKeyStore(ctx context.Context, decodeLocalAPIKey intf.ConfigObjectDecoder) (intf.LocalAPIKeyStorer, error) {

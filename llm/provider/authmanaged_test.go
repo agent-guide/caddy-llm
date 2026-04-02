@@ -58,7 +58,7 @@ func TestWrapWithAuthManagerHonorsAPIKeyFirst(t *testing.T) {
 
 	base := &testConfigurableProvider{
 		cfg: ProviderConfig{
-			Name:         "openai",
+			ProviderName: "openai",
 			APIKey:       "static-key",
 			AuthStrategy: AuthStrategyAPIKeyFirst,
 		},
@@ -88,7 +88,7 @@ func TestWrapWithAuthManagerUsesProviderCredentials(t *testing.T) {
 
 	base := &testConfigurableProvider{
 		cfg: ProviderConfig{
-			Name:         "openai",
+			ProviderName: "openai",
 			AuthStrategy: AuthStrategyCredentialFirst,
 		},
 	}

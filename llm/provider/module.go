@@ -92,14 +92,14 @@ func UnmarshalCaddyfileConfig(d *caddyfile.Dispenser, cfg *ProviderConfig) error
 	return nil
 }
 
-// ValidateConfigName ensures the provider config name matches the mounted module name.
-func ValidateConfigName(cfg *ProviderConfig, expected string) error {
-	if cfg.Name == "" {
-		cfg.Name = expected
+// ValidateProviderName ensures the provider config name matches the mounted module name.
+func ValidateProviderName(cfg *ProviderConfig, expected string) error {
+	if cfg.ProviderName == "" {
+		cfg.ProviderName = expected
 		return nil
 	}
-	if cfg.Name != expected {
-		return fmt.Errorf("provider name must be %q, got %q", expected, cfg.Name)
+	if cfg.ProviderName != expected {
+		return fmt.Errorf("provider_name must be %q, got %q", expected, cfg.ProviderName)
 	}
 	return nil
 }

@@ -114,18 +114,19 @@ func (r *cachedDynamicResolver) ResolveProvider(ctx context.Context, ref string)
 		return entry.provider, entry.name, nil
 	}
 
-	cfg, err := provider.DecodeStoredProviderConfig(tag, obj)
+	resolvedCfg, err := provider.NormalizeStoredProviderConfig(tag, obj)
 	if err != nil {
-		return nil, "", err
+		return nil, "", fmt.Errorf("normalize provider config %q: %w", ref, err)
 	}
-	prov, err := provider.NewProvider(cfg)
+
+	prov, err := provider.NewProvider(resolvedCfg)
 	if err != nil {
 		return nil, "", err
 	}
 
 	r.mu.Lock()
-	r.cache[ref] = cachedProviderEntry{cfgJSON: fingerprint, provider: prov, name: cfg.Name}
+	r.cache[ref] = cachedProviderEntry{cfgJSON: fingerprint, provider: prov, name: resolvedCfg.ProviderName}
 	r.mu.Unlock()
 
-	return prov, cfg.Name, nil
+	return prov, resolvedCfg.ProviderName, nil
 }

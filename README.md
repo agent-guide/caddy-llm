@@ -224,20 +224,42 @@ The route table also includes MCP, memory, agent, and metrics endpoints, but tho
 
 ## Admin API Examples
 
+Login and capture a session token:
+
+```bash
+TOKEN=$(
+  curl -s -X POST http://localhost:8082/admin/auth/login \
+    -H 'Content-Type: application/json' \
+    -d '{
+      "username": "admin",
+      "password": "your-password"
+    }' | jq -r '.token'
+)
+```
+
 Create a provider record:
 
 ```bash
 curl -X POST http://localhost:8082/admin/providers \
+  -H "Authorization: Bearer $TOKEN" \
   -H 'Content-Type: application/json' \
   -d '{
     "id": "openrouter",
-    "tag": "openrouter",
-    "config": {
-      "base_url": "https://openrouter.ai/api/v1",
-      "default_model": "openai/gpt-4o-mini"
-    }
+    "provider_name": "openrouter",
+    "base_url": "https://openrouter.ai/api/v1",
+    "default_model": "openai/gpt-4o-mini"
   }'
 ```
+
+List providers:
+
+```bash
+curl http://localhost:8082/admin/providers \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+Admin sessions are stored in memory. If the service restarts, previously issued
+tokens become invalid and callers must log in again to obtain a fresh token.
 
 Create a route record:
 

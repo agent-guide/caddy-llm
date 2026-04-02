@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -134,22 +135,43 @@ type testProviderConfigStore struct {
 func (s *testProviderConfigStore) ListByName(_ context.Context, name string) ([]any, error) {
 	out := make([]any, 0, len(s.items))
 	for _, item := range s.items {
-		if name == "" || item["tag"] == name {
-			out = append(out, item)
+		data, err := json.Marshal(item["config"])
+		if err != nil {
+			return nil, err
+		}
+		obj, err := provider.DecodeStoredProviderConfig(data)
+		if err != nil {
+			return nil, err
+		}
+		cfg, _ := obj.(*provider.ProviderConfig)
+		if cfg == nil {
+			continue
+		}
+		if name == "" || cfg.ProviderName == name {
+			out = append(out, cfg)
 		}
 	}
 	return out, nil
 }
 
-func (s *testProviderConfigStore) Save(_ context.Context, id string, name string, obj any) (string, error) {
+func (s *testProviderConfigStore) Create(_ context.Context, id string, name string, obj any) (string, error) {
 	if s.items == nil {
 		s.items = map[string]map[string]any{}
 	}
-	cfg, _ := obj.(map[string]any)
-	if cfg == nil {
-		cfg = map[string]any{}
+	cfgMap, ok := obj.(map[string]any)
+	if !ok {
+		data, err := json.Marshal(obj)
+		if err != nil {
+			return "", err
+		}
+		if err := json.Unmarshal(data, &cfgMap); err != nil {
+			return "", err
+		}
 	}
-	cloned := map[string]any{"id": id, "tag": name, "config": cfg}
+	if cfgMap == nil {
+		cfgMap = map[string]any{}
+	}
+	cloned := map[string]any{"id": id, "tag": name, "config": cfgMap}
 	s.items[id] = cloned
 	return id, nil
 }
@@ -159,11 +181,23 @@ func (s *testProviderConfigStore) Update(ctx context.Context, id string, obj any
 	if !ok {
 		return gorm.ErrRecordNotFound
 	}
-	cfg, _ := obj.(map[string]any)
-	if cfg == nil {
-		cfg = map[string]any{}
+	cfgMap, ok := obj.(map[string]any)
+	if !ok {
+		data, err := json.Marshal(obj)
+		if err != nil {
+			return err
+		}
+		if err := json.Unmarshal(data, &cfgMap); err != nil {
+			return err
+		}
 	}
-	item["config"] = cfg
+	if cfgMap == nil {
+		cfgMap = map[string]any{}
+	}
+	if providerName, _ := cfgMap["provider_name"].(string); providerName != "" {
+		item["tag"] = providerName
+	}
+	item["config"] = cfgMap
 	s.items[id] = item
 	return nil
 }
@@ -179,7 +213,15 @@ func (s *testProviderConfigStore) Get(_ context.Context, id string) (string, any
 		return "", nil, gorm.ErrRecordNotFound
 	}
 	tag, _ := item["tag"].(string)
-	return tag, item["config"], nil
+	data, err := json.Marshal(item["config"])
+	if err != nil {
+		return "", nil, err
+	}
+	obj, err := provider.DecodeStoredProviderConfig(data)
+	if err != nil {
+		return "", nil, err
+	}
+	return tag, obj, nil
 }
 
 type testRouteStore struct {
@@ -236,8 +278,8 @@ type integrationConfigStore struct {
 func (s *integrationConfigStore) GetCredentialStore(context.Context, configstoreintf.ConfigObjectDecoder) (configstoreintf.CredentialStorer, error) {
 	return nil, nil
 }
-func (s *integrationConfigStore) GetProviderConfigStore() configstoreintf.ProviderConfigStorer {
-	return s.providerStore
+func (s *integrationConfigStore) GetProviderConfigStore(context.Context, configstoreintf.ConfigObjectDecoder) (configstoreintf.ProviderConfigStorer, error) {
+	return s.providerStore, nil
 }
 func (s *integrationConfigStore) GetLocalAPIKeyStore(context.Context, configstoreintf.ConfigObjectDecoder) (configstoreintf.LocalAPIKeyStorer, error) {
 	return s.localAPIKeyStore, nil
@@ -721,11 +763,9 @@ func TestAdminProvisionedRouteAndLocalAPIKeyDriveOpenAIHandler(t *testing.T) {
 	}
 
 	postJSON("/admin/providers", map[string]any{
-		"id":  "openrouter",
-		"tag": "openrouter",
-		"config": map[string]any{
-			"base_url": "https://openrouter.example",
-		},
+		"id":            "openrouter",
+		"provider_name": "openrouter",
+		"base_url":      "https://openrouter.example",
 	})
 	postJSON("/admin/routes", routepkg.Route{
 		ID:   "chat-prod",
@@ -796,7 +836,8 @@ func TestServeLLMApiReloadsProviderConfigPerRequest(t *testing.T) {
 				"id":  "dyn-provider",
 				"tag": "testdynamic",
 				"config": map[string]any{
-					"name": "testdynamic",
+					"id":            "dyn-provider",
+					"provider_name": "testdynamic",
 					"options": map[string]any{
 						"message": "first provider version",
 					},
@@ -838,15 +879,15 @@ func TestServeLLMApiReloadsProviderConfigPerRequest(t *testing.T) {
 		if err != nil {
 			return nil, "", err
 		}
-		cfg, err := provider.DecodeStoredProviderConfig(tag, obj)
+		cfg, err := provider.NormalizeStoredProviderConfig(tag, obj)
 		if err != nil {
-			return nil, "", err
+			return nil, "", fmt.Errorf("normalize provider config %q: %w", ref, err)
 		}
 		prov, err := provider.NewProvider(cfg)
 		if err != nil {
 			return nil, "", err
 		}
-		return prov, cfg.Name, nil
+		return prov, cfg.ProviderName, nil
 	}), cfgStore.localAPIKeyStore, nil, nil)
 	handler.SetAgentGateway(gw)
 	handler.RouteID = "chat-prod"
@@ -884,7 +925,8 @@ func TestServeLLMApiReloadsProviderConfigPerRequest(t *testing.T) {
 	}
 
 	cfgStore.providerStore.(*testProviderConfigStore).items["dyn-provider"]["config"] = map[string]any{
-		"name": "testdynamic",
+		"id":            "dyn-provider",
+		"provider_name": "testdynamic",
 		"options": map[string]any{
 			"message": "second provider version",
 		},

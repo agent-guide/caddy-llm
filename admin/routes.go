@@ -9,6 +9,7 @@ import (
 	"github.com/agent-guide/caddy-agent-gateway/configstore/intf"
 	routepkg "github.com/agent-guide/caddy-agent-gateway/gateway/route"
 	"github.com/agent-guide/caddy-agent-gateway/internal/utils"
+	"github.com/agent-guide/caddy-agent-gateway/llm/provider"
 	"gorm.io/gorm"
 )
 
@@ -84,12 +85,6 @@ func (h *Handler) handleHealth(w http.ResponseWriter, r *http.Request) {
 	_ = utils.WriteJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
-type providerPayload struct {
-	ID     string `json:"id"`
-	Tag    string `json:"tag"`
-	Config any    `json:"config"`
-}
-
 func (h *Handler) handleListProviders(w http.ResponseWriter, r *http.Request) {
 	store := h.providerStore()
 	if store == nil {
@@ -97,12 +92,21 @@ func (h *Handler) handleListProviders(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	items, err := store.ListByName(r.Context(), r.URL.Query().Get("tag"))
+	items, err := store.ListByName(r.Context(), r.URL.Query().Get("provider_name"))
 	if err != nil {
 		_ = utils.WriteError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	_ = utils.WriteJSON(w, http.StatusOK, map[string]any{"items": items})
+	providers := make([]provider.ProviderConfig, 0, len(items))
+	for _, item := range items {
+		cfg, ok := item.(*provider.ProviderConfig)
+		if !ok || cfg == nil {
+			_ = utils.WriteError(w, http.StatusInternalServerError, "unexpected provider config type")
+			return
+		}
+		providers = append(providers, *cfg)
+	}
+	_ = utils.WriteJSON(w, http.StatusOK, map[string]any{"items": providers})
 }
 
 func (h *Handler) handleCreateProvider(w http.ResponseWriter, r *http.Request) {
@@ -112,26 +116,22 @@ func (h *Handler) handleCreateProvider(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var req providerPayload
-	if err := utils.DecodeJSON(r, &req); err != nil {
+	var cfg provider.ProviderConfig
+	if err := utils.DecodeJSON(r, &cfg); err != nil {
 		_ = utils.WriteError(w, http.StatusBadRequest, fmt.Sprintf("decode request: %v", err))
 		return
 	}
-	if req.ID == "" || req.Tag == "" {
-		_ = utils.WriteError(w, http.StatusBadRequest, "id and tag are required")
+	if cfg.Id == "" || cfg.ProviderName == "" {
+		_ = utils.WriteError(w, http.StatusBadRequest, "id and provider_name are required")
 		return
 	}
-	if req.Config == nil {
-		_ = utils.WriteError(w, http.StatusBadRequest, "config is required")
-		return
-	}
-
-	id, err := store.Save(r.Context(), req.ID, req.Tag, req.Config)
+	id, err := store.Create(r.Context(), cfg.Id, cfg.ProviderName, &cfg)
 	if err != nil {
 		_ = utils.WriteError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	_ = utils.WriteJSON(w, http.StatusCreated, map[string]any{"id": id, "tag": req.Tag, "config": req.Config})
+	cfg.Id = id
+	_ = utils.WriteJSON(w, http.StatusCreated, cfg)
 }
 
 func (h *Handler) handleGetProvider(w http.ResponseWriter, r *http.Request) {
@@ -142,7 +142,7 @@ func (h *Handler) handleGetProvider(w http.ResponseWriter, r *http.Request) {
 	}
 
 	id := r.PathValue("id")
-	tag, cfg, err := store.Get(r.Context(), id)
+	_, cfg, err := store.Get(r.Context(), id)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			_ = utils.WriteError(w, http.StatusNotFound, "provider not found")
@@ -151,7 +151,12 @@ func (h *Handler) handleGetProvider(w http.ResponseWriter, r *http.Request) {
 		_ = utils.WriteError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	_ = utils.WriteJSON(w, http.StatusOK, map[string]any{"id": id, "tag": tag, "config": cfg})
+	providerCfg, ok := cfg.(*provider.ProviderConfig)
+	if !ok || providerCfg == nil {
+		_ = utils.WriteError(w, http.StatusInternalServerError, "unexpected provider config type")
+		return
+	}
+	_ = utils.WriteJSON(w, http.StatusOK, providerCfg)
 }
 
 func (h *Handler) handleUpdateProvider(w http.ResponseWriter, r *http.Request) {
@@ -161,18 +166,23 @@ func (h *Handler) handleUpdateProvider(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var req providerPayload
-	if err := utils.DecodeJSON(r, &req); err != nil {
+	var cfg provider.ProviderConfig
+	if err := utils.DecodeJSON(r, &cfg); err != nil {
 		_ = utils.WriteError(w, http.StatusBadRequest, fmt.Sprintf("decode request: %v", err))
 		return
 	}
-	if req.Config == nil {
-		_ = utils.WriteError(w, http.StatusBadRequest, "config is required")
+	if cfg.ProviderName == "" {
+		_ = utils.WriteError(w, http.StatusBadRequest, "provider_name is required")
 		return
 	}
 
 	id := r.PathValue("id")
-	if err := store.Update(r.Context(), id, req.Config); err != nil {
+	if cfg.Id != "" && cfg.Id != id {
+		_ = utils.WriteError(w, http.StatusBadRequest, "body id must match path id")
+		return
+	}
+	cfg.Id = id
+	if err := store.Update(r.Context(), id, &cfg); err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			_ = utils.WriteError(w, http.StatusNotFound, "provider not found")
 			return
@@ -181,12 +191,17 @@ func (h *Handler) handleUpdateProvider(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tag, cfg, err := store.Get(r.Context(), id)
+	_, updatedCfg, err := store.Get(r.Context(), id)
 	if err != nil {
 		_ = utils.WriteError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	_ = utils.WriteJSON(w, http.StatusOK, map[string]any{"id": id, "tag": tag, "config": cfg})
+	providerCfg, ok := updatedCfg.(*provider.ProviderConfig)
+	if !ok || providerCfg == nil {
+		_ = utils.WriteError(w, http.StatusInternalServerError, "unexpected provider config type")
+		return
+	}
+	_ = utils.WriteJSON(w, http.StatusOK, providerCfg)
 }
 
 func (h *Handler) handleDeleteProvider(w http.ResponseWriter, r *http.Request) {
@@ -534,14 +549,18 @@ func (h *Handler) providerStore() intf.ProviderConfigStorer {
 	if h.configStore == nil {
 		return nil
 	}
-	return h.configStore.GetProviderConfigStore()
+	providerConfigStore, err := h.configStore.GetProviderConfigStore(context.Background(), provider.DecodeStoredProviderConfig)
+	if err != nil {
+		return nil
+	}
+	return providerConfigStore
 }
 
 func (h *Handler) routeStore() intf.RouteStorer {
 	if h.configStore == nil {
 		return nil
 	}
-	store, err := h.configStore.GetRouteStore(context.Background(), routepkg.DecodeRoute)
+	store, err := h.configStore.GetRouteStore(context.Background(), routepkg.DecodeStoredRoute)
 	if err != nil {
 		return nil
 	}
@@ -552,7 +571,7 @@ func (h *Handler) localAPIKeyStore() intf.LocalAPIKeyStorer {
 	if h.configStore == nil {
 		return nil
 	}
-	store, err := h.configStore.GetLocalAPIKeyStore(context.Background(), routepkg.DecodeLocalAPIKey)
+	store, err := h.configStore.GetLocalAPIKeyStore(context.Background(), routepkg.DecodeStoredLocalAPIKey)
 	if err != nil {
 		return nil
 	}

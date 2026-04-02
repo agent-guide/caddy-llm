@@ -26,8 +26,8 @@ func ValidateLocalAPIKeyForRoute(r Route, key *LocalAPIKey) (*LocalAPIKey, error
 	return key, nil
 }
 
-// DecodeLocalAPIKey decodes local API key records.
-func DecodeLocalAPIKey(data []byte) (any, error) {
+// DecodeStoredLocalAPIKey decodes local API key records.
+func DecodeStoredLocalAPIKey(data []byte) (any, error) {
 	var key LocalAPIKey
 	if err := json.Unmarshal(data, &key); err != nil {
 		return nil, err

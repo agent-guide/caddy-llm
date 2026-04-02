@@ -46,7 +46,7 @@ func (Provider) CaddyModule() caddy.ModuleInfo {
 }
 
 func (p *Provider) Provision(_ caddy.Context) error {
-	if err := provider.ValidateConfigName(&p.ProviderConfig, "openrouter"); err != nil {
+	if err := provider.ValidateProviderName(&p.ProviderConfig, "openrouter"); err != nil {
 		return err
 	}
 	built, err := New(p.ProviderConfig)

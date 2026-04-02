@@ -23,10 +23,10 @@ func RegisterProvider(name string, factory ProviderFactory) {
 // NewProvider creates a provider by name using registered factories.
 func NewProvider(config ProviderConfig) (Provider, error) {
 	mu.RLock()
-	factory, ok := factories[config.Name]
+	factory, ok := factories[config.ProviderName]
 	mu.RUnlock()
 	if !ok {
-		return nil, fmt.Errorf("unknown provider: %s", config.Name)
+		return nil, fmt.Errorf("unknown provider: %s", config.ProviderName)
 	}
 	return factory(config)
 }

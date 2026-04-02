@@ -72,8 +72,10 @@ type ProviderCapabilities struct {
 
 // ProviderConfig contains configuration for a provider instance.
 type ProviderConfig struct {
-	// Name is the registered provider name (e.g. "openai", "anthropic").
-	Name string `json:"name"`
+	// Id is the unique provider config ID.
+	Id string `json:"id"`
+	// ProviderName is the registered provider name (e.g. "openai", "anthropic").
+	ProviderName string `json:"provider_name"`
 	// APIKey is the provider API key. May be empty for local providers (Ollama).
 	APIKey string `json:"api_key,omitempty"`
 	// BaseURL overrides the provider's default API base URL.
@@ -132,6 +134,26 @@ func (c *ProviderConfig) Defaults() {
 	}
 }
 
+// NormalizeConfig returns a runtime-ready provider config without mutating the
+// source value. If ProviderName is empty, fallbackName is applied before defaults.
+func NormalizeConfig(cfg ProviderConfig, fallbackName string) ProviderConfig {
+	if cfg.ProviderName == "" {
+		cfg.ProviderName = fallbackName
+	}
+	cfg.Defaults()
+	return cfg
+}
+
+// NormalizeStoredProviderConfig converts a decoded config-store object into a
+// runtime-ready ProviderConfig without mutating the decoded object.
+func NormalizeStoredProviderConfig(tag string, obj any) (ProviderConfig, error) {
+	cfg, ok := obj.(*ProviderConfig)
+	if !ok || cfg == nil {
+		return ProviderConfig{}, fmt.Errorf("unexpected stored provider config type %T", obj)
+	}
+	return NormalizeConfig(*cfg, tag), nil
+}
+
 // --- Request / Response types ---
 
 // GenerateRequest is the unified internal request format passed to providers.
@@ -176,18 +198,10 @@ type Usage struct {
 }
 
 // DecodeStoredProviderConfig converts a config-store provider payload into ProviderConfig.
-func DecodeStoredProviderConfig(tag string, obj any) (ProviderConfig, error) {
-	var cfg ProviderConfig
-	data, err := json.Marshal(obj)
-	if err != nil {
-		return cfg, fmt.Errorf("marshal stored provider config: %w", err)
+func DecodeStoredProviderConfig(data []byte) (any, error) {
+	var providerConfig ProviderConfig
+	if err := json.Unmarshal(data, &providerConfig); err != nil {
+		return nil, err
 	}
-	if err := json.Unmarshal(data, &cfg); err != nil {
-		return cfg, fmt.Errorf("unmarshal stored provider config: %w", err)
-	}
-	if cfg.Name == "" {
-		cfg.Name = tag
-	}
-	cfg.Defaults()
-	return cfg, nil
+	return &providerConfig, nil
 }

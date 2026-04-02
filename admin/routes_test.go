@@ -23,8 +23,8 @@ func (s *testConfigStore) GetCredentialStore(context.Context, configstoreintf.Co
 	return nil, nil
 }
 
-func (s *testConfigStore) GetProviderConfigStore() configstoreintf.ProviderConfigStorer {
-	return nil
+func (s *testConfigStore) GetProviderConfigStore(context.Context, configstoreintf.ConfigObjectDecoder) (configstoreintf.ProviderConfigStorer, error) {
+	return nil, nil
 }
 
 func (s *testConfigStore) GetLocalAPIKeyStore(context.Context, configstoreintf.ConfigObjectDecoder) (configstoreintf.LocalAPIKeyStorer, error) {

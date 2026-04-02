@@ -26,8 +26,8 @@ func WrapWithAuthManager(base Provider, providerName string, cliauthMgr *manager
 		return base
 	}
 	cfg := base.Config()
-	if cfg.Name == "" {
-		cfg.Name = providerName
+	if cfg.ProviderName == "" {
+		cfg.ProviderName = providerName
 	}
 	cfg.Defaults()
 	return &authManagedProvider{

@@ -17,7 +17,7 @@ func TestRouteStoreReservedGroupColumn(t *testing.T) {
 		t.Fatalf("open sqlite db: %v", err)
 	}
 
-	store, err := NewRouteStore(ctx, db, route.DecodeRoute)
+	store, err := NewRouteStore(ctx, db, route.DecodeStoredRoute)
 	if err != nil {
 		t.Fatalf("new route store: %v", err)
 	}
